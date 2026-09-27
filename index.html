@@ -70,16 +70,12 @@
   @keyframes simBlink { 0%,100%{opacity:1;} 50%{opacity:0.15;} }
 
   /* ---- TOP BAR ---- */
-  .topbar {
-    background: rgba(255,255,255,0.92);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(0,0,0,0.08);
-    box-shadow: 0 1px 12px rgba(0,0,0,0.06);
-    padding: 10px 16px;
-    display: flex; align-items: center; justify-content: space-between;
-    position: sticky; top: 0; z-index: 100;
-  }
+  /* Eski/artık kullanılmayan üst çubuk: yeni "pusula-header" (pusula ikonu + isim + zil + avatar +
+     çıkış kapısı) tüm bu bilgiyi zaten gösteriyor. Bu eski çubuk ekranda kalınca hem marka adı ve
+     öğrenci ismi iki kez görünüyordu, hem de buradaki kapı düğmesi onay sormadan direkt çıkış
+     yapıyordu. Kalıcı olarak gizlendi; #topName güncellemesi hâlâ çalışır ama görünmez, hiçbir
+     fonksiyon bozulmaz. */
+  .topbar { display: none; }
   .topbar .brand {
     font-family: 'Playfair Display', serif;
     font-size: 1.4rem; font-weight: 900;
@@ -95,6 +91,35 @@
   /* ---- MAIN LAYOUT ---- */
   .app { display: none; flex-direction: column; min-height: 100vh; }
   .app.active { display: flex; }
+
+  /* ---- GENEL ONAY / PROFİL PENCERESİ (native confirm() yerine, tüm ortamlarda çalışır) ---- */
+  .appModalOverlay {
+    position: fixed; inset: 0; z-index: 5000;
+    background: rgba(10,12,20,0.55);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    animation: appModalFade 0.15s ease-out;
+  }
+  @keyframes appModalFade { from { opacity: 0; } to { opacity: 1; } }
+  .appModalBox {
+    background: var(--surface); border-radius: 18px; max-width: 380px; width: 100%;
+    padding: 22px 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+    max-height: 86vh; overflow-y: auto;
+  }
+  .appModalTitle { font-family: 'Playfair Display', serif; font-weight: 900; font-size: 1.1rem; margin-bottom: 10px; color: var(--text1); }
+  .appModalText { font-size: 0.9rem; color: var(--text2); line-height: 1.5; margin-bottom: 18px; }
+  .appModalBtnRow { display: flex; gap: 10px; }
+  .appModalBtn { flex: 1; padding: 11px; border-radius: 12px; border: none; font-size: 0.88rem; font-weight: 700; cursor: pointer; }
+  .appModalBtn.primary { background: var(--accent2); color: #fff; }
+  .appModalBtn.danger { background: var(--red); color: #fff; }
+  .appModalBtn.ghost { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
+  .appModalInput {
+    width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 10px; font-size: 0.86rem; margin-bottom: 8px; font-family: 'DM Sans', sans-serif;
+  }
+  .appModalRow { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; gap: 10px; }
+  .appModalRow span:first-child { color: var(--text3); flex-shrink: 0; }
+  .appModalRow span:last-child { font-weight: 600; text-align: right; word-break: break-word; }
 
   /* ---- AUTH SCREEN ---- */
   .role-btn { margin-bottom: 12px; }
@@ -1137,25 +1162,25 @@
         <p>Bilgilerini eksiksiz doldur.</p>
         <div class="form-group">
           <label>Ad Soyad</label>
-          <input type="text" id="regName" placeholder="Örn: Ahmet Yılmaz">
+          <input autocomplete="off" type="text" id="regName" placeholder="Örn: Ahmet Yılmaz">
         </div>
         <div class="form-group">
           <label>E-posta Adresi</label>
-          <input type="email" id="regEmail" placeholder="ornek@mail.com">
+          <input autocomplete="off" type="email" id="regEmail" placeholder="ornek@mail.com">
         </div>
         <div class="form-group">
           <label>Cep Telefonu</label>
-          <input type="tel" id="regPhone" placeholder="05XX XXX XX XX">
+          <input autocomplete="off" type="tel" id="regPhone" placeholder="05XX XXX XX XX">
         </div>
         <div class="form-group">
           <label>Şifre Oluştur</label>
-          <input type="password" id="regPass" placeholder="En az 6 karakter">
+          <input autocomplete="off" type="password" id="regPass" placeholder="En az 6 karakter">
         </div>
         <div class="form-group" id="regStudentWrap" style="display:none;">
           <label>Öğrenci Kodu</label>
-          <input type="text" id="regStudentKod" placeholder="Örn: YKS-4F2A" style="text-transform:uppercase;">
+          <input autocomplete="off" type="text" id="regStudentKod" placeholder="Örn: YKS-4F2A" style="text-transform:uppercase;">
           <label style="margin-top:10px;">Öğrencinin Adı Soyadı</label>
-          <input type="text" id="regStudentName" placeholder="Öğrenci kodunun sahibinin adı soyadı">
+          <input autocomplete="off" type="text" id="regStudentName" placeholder="Öğrenci kodunun sahibinin adı soyadı">
           <p class="pmeta" style="margin-top:6px;">Öğrenci kodunu, çocuğunuzun "Kişisel Bilgilerim" ekranından öğrenebilirsiniz.</p>
         </div>
         <div class="auth-error" id="regError"></div>
@@ -1169,15 +1194,15 @@
         <p>E-posta veya cep telefonu ile giriş yap.</p>
         <div class="form-group">
           <label>E-posta veya Cep Telefonu</label>
-          <input type="text" id="loginId" placeholder="ornek@mail.com veya 05XX...">
+          <input autocomplete="off" type="text" id="loginId" placeholder="ornek@mail.com veya 05XX...">
         </div>
         <div class="form-group">
           <label>Şifre</label>
-          <input type="password" id="loginPass" placeholder="Şifren">
+          <input autocomplete="off" type="password" id="loginPass" placeholder="Şifren">
         </div>
         <div class="auth-error" id="loginError"></div>
         <label style="display:flex;align-items:center;gap:8px;margin:4px 0 14px;font-size:0.88rem;cursor:pointer;color:var(--text2,#555);">
-          <input type="checkbox" id="loginRemember" style="width:16px;height:16px;cursor:pointer;">
+          <input autocomplete="off" type="checkbox" id="loginRemember" style="width:16px;height:16px;cursor:pointer;">
           Oturumu açık tut
         </label>
         <button class="btn-primary" style="background:var(--green);" onclick="doLogin()">🔑 Giriş Yap</button>
@@ -1199,15 +1224,15 @@
 
       <div class="form-group">
         <label>Adın ve Soyadın</label>
-        <input type="text" id="inputName" placeholder="Örn: Ahmet Yılmaz">
+        <input autocomplete="off" type="text" id="inputName" placeholder="Örn: Ahmet Yılmaz">
       </div>
       <div class="form-group">
         <label>Hedef Bölüm</label>
-        <input type="text" id="inputBolum" placeholder="Örn: Tıbbi Görüntüleme">
+        <input autocomplete="off" type="text" id="inputBolum" placeholder="Örn: Tıbbi Görüntüleme">
       </div>
       <div class="form-group">
         <label>Hedef Üniversite</label>
-        <input type="text" id="inputUni" placeholder="Örn: Ege Üniversitesi">
+        <input autocomplete="off" type="text" id="inputUni" placeholder="Örn: Ege Üniversitesi">
       </div>
       <div class="form-group">
         <label>Puan Türü</label>

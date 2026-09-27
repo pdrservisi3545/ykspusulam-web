@@ -1459,6 +1459,13 @@ function baHesaplaSoruDurum() {
   return { toplam: dogru + yanlis + bos, dogru, yanlis, bos };
 }
 
+// NOT: Bu hesaplama, "Derslerim" (baRenderDersler) ekranındaki kazanım bazlı başarı
+// yüzdesiyle BİREBİR AYNI formülü kullanır (net = doğru - yanlış/4; yüzde = net / TÜM
+// çözülen soru [doğru+yanlış+BOŞ dahil]). Eskiden burada sadece doğru/(doğru+yanlış)
+// hesaplanıyordu; bu, boş bırakılan soruları hesaba hiç katmadığı için (ör. 18 doğru,
+// 0 yanlış, 3 boş) yanlışlıkla %100 gösteriyordu. İki ekran arasında da tutarlılık
+// sağlanması için tek bir yerde (burada) hesaplanıp iki formülün asla birbirinden
+// sapmaması hedeflenir.
 function baZayifKonular(limit) {
   limit = limit || 3;
   const dersAnahtarlari = baSorumluDersAnahtarlari();
@@ -1468,16 +1475,18 @@ function baZayifKonular(limit) {
     const dersObj = (VG_DERSLER[sinav] || []).find(d => d.key === dersKey);
     if (!dersObj) return;
     dersObj.kazanimlar.forEach((konuAd, ki) => {
-      let d = 0, y = 0;
+      let d = 0, y = 0, b = 0;
       for (let t = 1; t <= vgKonuTestSayisi(dersKey, ki); t++) {
         try {
           const s = JSON.parse(vgGetItem('vgkz_' + dersKey + '_' + ki + '_' + t) || '{}');
-          d += (+s.d || 0); y += (+s.y || 0);
+          d += (+s.d || 0); y += (+s.y || 0); b += (+s.b || 0);
         } catch(e){}
       }
-      const cozulen = d + y;
-      if (cozulen >= 5) {
-        konular.push({ dersAd: dersObj.ad, konuAd, dersKey, ki, sinav, pct: Math.round(d / cozulen * 100), cozulen });
+      const toplamSoru = d + y + b;
+      if (toplamSoru >= 5) {
+        const net = d - y / 4;
+        const pct = Math.round((net / toplamSoru) * 100);
+        konular.push({ dersAd: dersObj.ad, konuAd, dersKey, ki, sinav, pct, cozulen: toplamSoru });
       }
     });
   });
@@ -2395,7 +2404,7 @@ function kbNetGridHtml() {
   const netInp = (key, label) => `
     <div class="kb-net-field">
       <label class="kb-net-label">${label}</label>
-      <input class="kb-net-input" type="number" step="0.25" id="kbn_${key}" value="${k.netler[key] || ''}" placeholder="0" oninput="kbSave()">
+      <input autocomplete="off" class="kb-net-input" type="number" step="0.25" id="kbn_${key}" value="${k.netler[key] || ''}" placeholder="0" oninput="kbSave()">
     </div>`;
   const testlerSecili = k.testler || [];
   const gosterTYT = testlerSecili.includes('TYT');
@@ -2645,12 +2654,12 @@ function renderKisiselBilgiler(el) {
   const inp = (id, label, val, ph) => `
     <div class="kb-field">
       <label class="kb-label">${label}</label>
-      <input class="kb-input" type="text" id="${id}" value="${val || ''}" placeholder="${ph || ''}" oninput="kbSave()">
+      <input autocomplete="off" class="kb-input" type="text" id="${id}" value="${val || ''}" placeholder="${ph || ''}" oninput="kbSave()">
     </div>`;
   const netInp = (key, label) => `
     <div class="kb-net-field">
       <label class="kb-net-label">${label}</label>
-      <input class="kb-net-input" type="number" step="0.25" id="kbn_${key}" value="${k.netler[key] || ''}" placeholder="0" oninput="kbSave()">
+      <input autocomplete="off" class="kb-net-input" type="number" step="0.25" id="kbn_${key}" value="${k.netler[key] || ''}" placeholder="0" oninput="kbSave()">
     </div>`;
 
   el.innerHTML = `
@@ -2692,7 +2701,7 @@ function renderKisiselBilgiler(el) {
 
       <div class="kb-field">
         <label class="kb-label">📅 YksPusulam Başlangıç Tarihim</label>
-        <input class="kb-input" type="date" id="kb_baslangicTarih" value="${k.baslangicTarih || ''}" oninput="kbSave()">
+        <input autocomplete="off" class="kb-input" type="date" id="kb_baslangicTarih" value="${k.baslangicTarih || ''}" oninput="kbSave()">
       </div>
 
       ${inp('kb_uni', 'Hedeflediğim Üniversite', k.uni || state.student.uni)}
@@ -2866,7 +2875,7 @@ function dpRenderOlusturEkrani(el) {
     const kutular = day.items.map((it, ii) => {
       let icerik;
       if (it.tip === 'yazi') {
-        icerik = `<textarea rows="2" placeholder="Yazmak istediğini gir..." oninput="dpKutuMetinKaydet(${di},${ii},this.value)" style="width:100%;padding:8px;border:1px solid rgba(150,110,40,0.4);border-radius:8px;font-size:0.76rem;font-family:'DM Sans',sans-serif;resize:vertical;background:#fff;box-sizing:border-box;">${it.metin || ''}</textarea>`;
+        icerik = `<textarea autocomplete="off" rows="2" placeholder="Yazmak istediğini gir..." oninput="dpKutuMetinKaydet(${di},${ii},this.value)" style="width:100%;padding:8px;border:1px solid rgba(150,110,40,0.4);border-radius:8px;font-size:0.76rem;font-family:'DM Sans',sans-serif;resize:vertical;background:#fff;box-sizing:border-box;">${it.metin || ''}</textarea>`;
       } else if (it.tip === 'video') {
         icerik = `<div onclick="${it.url ? `window.open('${it.url.replace(/'/g, "\\'")}','_blank')` : ''}" style="font-size:0.78rem;color:#3a2a15;background:#fff;border-radius:8px;padding:8px;display:flex;align-items:center;gap:6px;${it.url ? 'cursor:pointer;' : ''}"><span>▶️</span><span>${it.video}</span></div>`;
       } else {
@@ -5265,8 +5274,8 @@ function renderVideoYonetim() {
                   <button onclick="tvKvRemoveVideo(${di},${i},${vi})" style="background:#c0392b;color:#fff;border:none;border-radius:6px;padding:5px 9px;font-size:0.7rem;cursor:pointer;flex-shrink:0;">✕</button>
                 </div>`).join('')}
               <div style="display:flex;gap:6px;margin-top:6px;">
-                <input type="text" id="kvAdIn_${di}_${i}" placeholder="Tuş ismi" style="width:110px;padding:6px;border:1px solid var(--border);border-radius:8px;font-size:0.7rem;">
-                <input type="url" id="kvUrlIn_${di}_${i}" placeholder="YouTube linki" style="flex:1;padding:6px;border:1px solid var(--border);border-radius:8px;font-size:0.7rem;">
+                <input autocomplete="off" type="text" id="kvAdIn_${di}_${i}" placeholder="Tuş ismi" style="width:110px;padding:6px;border:1px solid var(--border);border-radius:8px;font-size:0.7rem;">
+                <input autocomplete="off" type="url" id="kvUrlIn_${di}_${i}" placeholder="YouTube linki" style="flex:1;padding:6px;border:1px solid var(--border);border-radius:8px;font-size:0.7rem;">
                 <button onclick="tvKvAddVideo(${di},${i})" style="background:var(--accent);color:#2b2008;border:none;border-radius:8px;padding:6px 12px;font-size:0.7rem;font-weight:700;cursor:pointer;flex-shrink:0;">Ekle</button>
               </div>
             </div>`;
@@ -6747,7 +6756,7 @@ function renderPuanHesaplama(el) {
   const numInp = (id, label, key) => `
     <div style="display:flex;flex-direction:column;gap:4px;">
       <label style="font-size:0.68rem;color:#6b5636;font-weight:700;">${label}</label>
-      <input type="number" step="0.25" id="${id}" value="${ph[key] || ''}" placeholder="0" oninput="phSave()" style="padding:9px 10px;border:1px solid rgba(180,140,60,0.4);border-radius:10px;font-size:0.85rem;width:100%;background:rgba(255,253,247,0.85);color:#3a2a15;">
+      <input autocomplete="off" type="number" step="0.25" id="${id}" value="${ph[key] || ''}" placeholder="0" oninput="phSave()" style="padding:9px 10px;border:1px solid rgba(180,140,60,0.4);border-radius:10px;font-size:0.85rem;width:100%;background:rgba(255,253,247,0.85);color:#3a2a15;">
     </div>`;
   const baslik = (t) => `<div style="font-weight:800;font-size:0.9rem;margin:16px 0 8px;color:#3a2a15;display:flex;align-items:center;gap:8px;"><span style="width:4px;height:16px;background:linear-gradient(180deg,#d4af5a,#8a6a2f);border-radius:2px;"></span>${t}</div>`;
   el.innerHTML = `
@@ -6775,7 +6784,7 @@ function renderPuanHesaplama(el) {
         ${numInp('ph_ydt','YDT Yabancı Dil (80)','ydt')}
         <div style="display:flex;flex-direction:column;gap:4px;">
           <label style="font-size:0.68rem;color:#6b5636;font-weight:700;">Diploma Notu (100 üzerinden)</label>
-          <input type="number" id="ph_obp" value="${k}" placeholder="Örn: 85" oninput="phSave()" style="padding:9px 10px;border:1px solid rgba(180,140,60,0.4);border-radius:10px;font-size:0.85rem;width:100%;background:rgba(255,253,247,0.85);color:#3a2a15;">
+          <input autocomplete="off" type="number" id="ph_obp" value="${k}" placeholder="Örn: 85" oninput="phSave()" style="padding:9px 10px;border:1px solid rgba(180,140,60,0.4);border-radius:10px;font-size:0.85rem;width:100%;background:rgba(255,253,247,0.85);color:#3a2a15;">
         </div>
       </div>
       <button style="width:100%;margin-top:18px;padding:13px;border:none;border-radius:14px;font-weight:800;font-size:0.9rem;cursor:pointer;background:linear-gradient(135deg,#8a6a2f,#d4af5a 50%,#b8903f);color:#2b2008;box-shadow:0 4px 12px rgba(120,90,30,0.3);" onclick="phHesapla()">🧮 Hesapla</button>

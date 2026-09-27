@@ -263,15 +263,39 @@ async function cloudLoadDoc(col, id) {
   try { const doc = await cloud.db.collection(col).doc(id).get(); return doc.exists ? doc.data() : null; }
   catch(e){ console.warn(e); return null; }
 }
+// Buluta yazma 1 saniye "debounce" edilir (her tuşta buluta gitmesin diye), ANCAK bu 1 saniyelik
+// bekleme sırasında öğrenci/öğretmen ekranı değiştirir ya da uygulamayı kapatırsa, o son yazılan
+// veri (ör. bir konuya girilen "yanlış" sayısı) buluta hiç ulaşmadan kaybolabiliyordu — cihazda
+// doğru duruyordu ama bulut eski/eksik kopyayı koruyor, bir sonraki açılışta bulut kopyası yerelin
+// üzerine yazıp o veriyi siliyordu. Bunu önlemek için: bekleyen her yazma burada saklanır ve
+// cloudFlushAllPending() ile (sekme değişince / uygulama arka plana alınınca / çıkış yapılınca)
+// 1 saniye beklemeden HEMEN gönderilir.
 const cloudTimers = {};
+const cloudPendingWrites = {};
 function cloudSaveDocDebounced(col, id, data) {
   if (!cloud.on) return;
   const k = col + '/' + id;
+  cloudPendingWrites[k] = { col, id, data };
   clearTimeout(cloudTimers[k]);
-  cloudTimers[k] = setTimeout(() => {
-    cloud.db.collection(col).doc(id).set(JSON.parse(JSON.stringify(data))).catch(e => console.warn(e));
-  }, 1000);
+  cloudTimers[k] = setTimeout(() => cloudFlushOne(k), 1000);
 }
+function cloudFlushOne(k) {
+  const pending = cloudPendingWrites[k];
+  if (!pending) return;
+  clearTimeout(cloudTimers[k]);
+  delete cloudTimers[k];
+  delete cloudPendingWrites[k];
+  cloud.db.collection(pending.col).doc(pending.id).set(JSON.parse(JSON.stringify(pending.data))).catch(e => console.warn(e));
+}
+function cloudFlushAllPending() {
+  Object.keys(cloudPendingWrites).forEach(k => cloudFlushOne(k));
+}
+// Sekme/uygulama arka plana alınınca (kapanmadan hemen önceki en güvenilir an) bekleyen
+// yazmaları hemen gönder.
+try {
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') cloudFlushAllPending(); });
+  window.addEventListener('pagehide', cloudFlushAllPending);
+} catch(e){}
 
 // Bir öğrencinin YKS verisini oku (buluttan ya da yerelden)
 function getStudentState(id) {
@@ -700,6 +724,7 @@ function oturumKaydet(userId, acikTut) {
 }
 
 function logout() {
+  try { cloudFlushAllPending(); } catch(e){}
   try { vgRemoveItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } catch(e){}
   if (cloud.on && cloud.auth) { try { cloud.auth.signOut(); } catch(e){} }
   currentUser = null;
@@ -710,8 +735,106 @@ function logout() {
   document.getElementById('authScreen').style.display = 'block';
   showAuthStep('stepRole');
 }
+// Native window.confirm() bazı Android/WebView paketleyicilerinde (ör. Median.co)
+// hiçbir uyarı göstermeden otomatik "tamam" kabul edilebiliyor; bu yüzden kendi
+// ekranımızda bir onay penceresi çiziyoruz — böylece her ortamda garanti çalışır.
+function appModalKapat() {
+  const el = document.getElementById('appModalRoot');
+  if (el) el.remove();
+}
+function appConfirm(baslik, mesaj, evetMetin, onYes) {
+  appModalKapat();
+  const wrap = document.createElement('div');
+  wrap.id = 'appModalRoot';
+  wrap.className = 'appModalOverlay';
+  wrap.innerHTML = `
+    <div class="appModalBox">
+      <div class="appModalTitle">${baslik}</div>
+      <div class="appModalText">${mesaj}</div>
+      <div class="appModalBtnRow">
+        <button class="appModalBtn ghost" onclick="appModalKapat()">Vazgeç</button>
+        <button class="appModalBtn danger" id="appModalYesBtn">${evetMetin}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) appModalKapat(); });
+  document.getElementById('appModalYesBtn').onclick = () => { appModalKapat(); onYes(); };
+}
 function cikisOnayla() {
-  if (confirm('Çıkış yapmak istediğine emin misin?')) logout();
+  appConfirm('🚪 Çıkış Yap', 'Uygulamadan çıkış yapmak istediğine emin misin?', 'Evet, Çıkış Yap', logout);
+}
+
+// ---------- Profil paneli (avatar tıklanınca): ad/e-posta/telefon + şifre değiştirme ----------
+function profilPanelAc() {
+  if (!currentUser) return;
+  appModalKapat();
+  const row = (l, v) => `<div class="appModalRow"><span>${l}</span><span>${(v === undefined || v === null || v === '') ? '—' : v}</span></div>`;
+  const wrap = document.createElement('div');
+  wrap.id = 'appModalRoot';
+  wrap.className = 'appModalOverlay';
+  wrap.innerHTML = `
+    <div class="appModalBox" style="max-width:420px;">
+      <div class="appModalTitle">👤 Profil Bilgilerim</div>
+      <div style="margin-bottom:18px;">
+        ${row('Ad Soyad', currentUser.name)}
+        ${row('E-posta', currentUser.email)}
+        ${row('Telefon', currentUser.phone)}
+      </div>
+      <div style="font-weight:800;font-size:0.92rem;margin-bottom:8px;">🔒 Şifreni Değiştir</div>
+      <input autocomplete="off" type="password" id="pfEskiSifre" class="appModalInput" placeholder="Mevcut şifren">
+      <input autocomplete="off" type="password" id="pfYeniSifre" class="appModalInput" placeholder="Yeni şifre (en az 6 karakter)">
+      <input autocomplete="off" type="password" id="pfYeniSifreTekrar" class="appModalInput" placeholder="Yeni şifre (tekrar)">
+      <div id="pfSifreMsg" style="font-size:0.8rem;margin-bottom:10px;min-height:16px;"></div>
+      <button class="appModalBtn primary" style="width:100%;" onclick="profilSifreDegistir()">Şifreyi Güncelle</button>
+      <button class="appModalBtn ghost" style="width:100%;margin-top:10px;" onclick="appModalKapat()">Kapat</button>
+    </div>`;
+  document.body.appendChild(wrap);
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) appModalKapat(); });
+}
+
+async function profilSifreDegistir() {
+  const msg = document.getElementById('pfSifreMsg');
+  msg.style.color = 'var(--red)';
+  const eski = document.getElementById('pfEskiSifre').value;
+  const yeni = document.getElementById('pfYeniSifre').value;
+  const yeniTekrar = document.getElementById('pfYeniSifreTekrar').value;
+  if (!eski || !yeni || !yeniTekrar) { msg.textContent = 'Tüm alanları doldur.'; return; }
+  if (yeni.length < 6) { msg.textContent = 'Yeni şifre en az 6 karakter olmalı.'; return; }
+  if (yeni !== yeniTekrar) { msg.textContent = 'Yeni şifreler birbiriyle uyuşmuyor.'; return; }
+
+  const users = getUsers();
+  const idx = users.findIndex(u => u.id === currentUser.id);
+  if (idx === -1) { msg.textContent = 'Kullanıcı bulunamadı.'; return; }
+
+  if (cloud.on && cloud.auth && cloud.auth.currentUser) {
+    try {
+      const cred = firebase.auth.EmailAuthProvider.credential(currentUser.email, eski);
+      await cloud.auth.currentUser.reauthenticateWithCredential(cred);
+      await cloud.auth.currentUser.updatePassword(yeni);
+    } catch (e) {
+      if (e && (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential')) { msg.textContent = 'Mevcut şifren hatalı.'; }
+      else if (e && e.code === 'auth/weak-password') { msg.textContent = 'Yeni şifre en az 6 karakter olmalı.'; }
+      else if (e && e.code === 'auth/too-many-requests') { msg.textContent = 'Çok fazla yanlış deneme yapıldı, biraz sonra tekrar dene.'; }
+      else { msg.textContent = 'Şifre değiştirilemedi: internetini kontrol edip tekrar dene.'; }
+      return;
+    }
+  } else {
+    if (users[idx].pass !== simpleHash(eski)) { msg.textContent = 'Mevcut şifren hatalı.'; return; }
+  }
+
+  users[idx].pass = simpleHash(yeni);
+  currentUser.pass = users[idx].pass;
+  if (cloud.on) {
+    const tamam = await cloudSaveUser(users[idx]);
+    if (!tamam) { msg.textContent = 'Şifre buluta kaydedilemedi: internetini kontrol edip tekrar dene.'; return; }
+  } else {
+    saveUsers(users);
+  }
+  msg.style.color = 'var(--green)';
+  msg.textContent = '✅ Şifren güncellendi.';
+  document.getElementById('pfEskiSifre').value = '';
+  document.getElementById('pfYeniSifre').value = '';
+  document.getElementById('pfYeniSifreTekrar').value = '';
 }
 
 async function restoreSession() {
@@ -856,7 +979,7 @@ function renderRolePanel() {
       <div style="max-width:${tv.sub === 'program' ? '1100px' : '720px'};margin:0 auto;">
         <div class="setup-card" style="max-width:none;">
           ${inner}
-          <button class="btn-link" onclick="logout()" style="margin-top:24px;color:var(--red);">🚪 Çıkış Yap</button>
+          <button class="btn-link" onclick="cikisOnayla()" style="margin-top:24px;color:var(--red);">🚪 Çıkış Yap</button>
         </div>
       </div>
     </div>`;
@@ -938,6 +1061,9 @@ function tvOgrenciVeriGirisiAc(studentId) {
 }
 function tvVgGeriDon() {
   if (!tvVgBorrow) return;
+  // Öğretmenin az önce bu öğrenci için girdiği veri (ör. bir konunun doğru/yanlış sayısı),
+  // öğretmen kendi ekranına dönerken buluta gitmeyi 1 saniye bekleyip kaybolmasın diye hemen gönderilir.
+  cloudFlushAllPending();
   state = tvVgBorrow.savedState;
   sbState = tvVgBorrow.savedSbState;
   currentUser = tvVgBorrow.savedCurrentUser;
@@ -979,7 +1105,7 @@ function renderMesajYaz() {
     </div>
     <div class="form-group">
       <label>Mesajın</label>
-      <textarea id="mesajMetin" rows="5" placeholder="Mesajını yaz..."></textarea>
+      <textarea autocomplete="off" id="mesajMetin" rows="5" placeholder="Mesajını yaz..."></textarea>
     </div>
     <div id="mesajGonderMsg" class="pmeta" style="min-height:16px;margin-bottom:6px;"></div>
     <button class="btn-primary" onclick="mesajGonderTikla()">📨 Gönder</button>
@@ -1054,7 +1180,7 @@ function renderMesajlarOgrenci(el) {
       </div>
       <div class="kb-field">
         <label class="kb-label">Mesajın</label>
-        <textarea class="kb-input" id="ogrMesajMetin" rows="5" placeholder="Mesajını yaz..." style="height:auto;resize:vertical;"></textarea>
+        <textarea autocomplete="off" class="kb-input" id="ogrMesajMetin" rows="5" placeholder="Mesajını yaz..." style="height:auto;resize:vertical;"></textarea>
       </div>
       <div id="ogrMesajGonderMsg" class="pmeta" style="min-height:16px;margin-bottom:6px;"></div>
       <button class="btn-primary" onclick="ogrMesajGonderTikla()" style="width:auto;padding:12px 24px;">📨 Gönder</button>
@@ -1335,8 +1461,8 @@ function tvDpRenderLinkEkraniIcerik() {
     <button class="btn-link" onclick="tvDpLinkSeciciKapat()" style="text-align:left;margin:0 0 12px;">← Geri</button>
     <h3 style="font-size:1rem;margin-bottom:12px;">🔗 Bağlantı Ekle</h3>
     <p class="pmeta" style="margin-bottom:10px;">Bir video, PDF, makale ya da başka herhangi bir sayfanın adresini ekleyebilirsin. Öğrenci kutucuğa dokunduğunda bu adrese yönlendirilir.</p>
-    <input id="tvDpLinkBaslik" type="text" placeholder="Başlık (ör: Türev Konu Anlatımı)" value="${(s.baslikVal||'').replace(/"/g,'&quot;')}" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:0.82rem;margin-bottom:10px;">
-    <input id="tvDpLinkUrl" type="text" placeholder="Bağlantı adresi (https://...)" value="${(s.urlVal||'').replace(/"/g,'&quot;')}" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:0.82rem;margin-bottom:6px;">
+    <input autocomplete="off" id="tvDpLinkBaslik" type="text" placeholder="Başlık (ör: Türev Konu Anlatımı)" value="${(s.baslikVal||'').replace(/"/g,'&quot;')}" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:0.82rem;margin-bottom:10px;">
+    <input autocomplete="off" id="tvDpLinkUrl" type="text" placeholder="Bağlantı adresi (https://...)" value="${(s.urlVal||'').replace(/"/g,'&quot;')}" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:0.82rem;margin-bottom:6px;">
     <div id="tvDpLinkHata" class="auth-error" style="margin-bottom:10px;"></div>
     <button class="btn-primary" onclick="tvDpLinkKaydet()">✅ Kaydet</button>`;
 }
@@ -1384,7 +1510,7 @@ function tvDpRenderOlusturEkrani(o) {
     const kutular = day.items.map((it, ii) => {
       let icerik;
       if (it.tip === 'yazi') {
-        icerik = `<textarea rows="2" placeholder="Yazmak istediğini gir..." oninput="tvDpKutuMetinKaydet(${di},${ii},this.value)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:0.76rem;font-family:'DM Sans',sans-serif;resize:vertical;background:var(--surface);box-sizing:border-box;">${it.metin || ''}</textarea>`;
+        icerik = `<textarea autocomplete="off" rows="2" placeholder="Yazmak istediğini gir..." oninput="tvDpKutuMetinKaydet(${di},${ii},this.value)" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:0.76rem;font-family:'DM Sans',sans-serif;resize:vertical;background:var(--surface);box-sizing:border-box;">${it.metin || ''}</textarea>`;
       } else if (it.tip === 'video') {
         icerik = `<div style="font-size:0.78rem;background:var(--surface);border-radius:8px;padding:8px;display:flex;align-items:center;gap:6px;"><span>▶️</span><span>${it.video}</span></div>`;
       } else if (it.tip === 'link') {
@@ -2361,7 +2487,7 @@ function renderDashboard(el) {
             <div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-size:1.1rem;">🔔</div>
             ${bildirimOkunmamisSayisi() > 0 ? `<div style="position:absolute;top:-4px;right:-4px;background:var(--red,#c0392b);color:#fff;font-size:0.62rem;font-weight:800;border-radius:10px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 3px;">${bildirimOkunmamisSayisi()}</div>` : ''}
           </div>
-          <div class="pusula-avatar">${harf}</div>
+          <div class="pusula-avatar" style="cursor:pointer;" onclick="profilPanelAc()" title="Profil Bilgilerim">${harf}</div>
           <div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-size:1.15rem;cursor:pointer;" onclick="cikisOnayla()" title="Çıkış Yap">🚪</div>
         </div>
       </div>
@@ -2545,7 +2671,7 @@ function renderSoruKavanozu(el) {
           </div>
         </button>
       </div>
-      <input type="file" accept="image/*" capture="environment" id="kavanozCameraInput" style="position:fixed;top:-999px;left:-999px;width:1px;height:1px;opacity:0;" onchange="kavanozFotoSecildi(this)">
+      <input autocomplete="off" type="file" accept="image/*" capture="environment" id="kavanozCameraInput" style="position:fixed;top:-999px;left:-999px;width:1px;height:1px;opacity:0;" onchange="kavanozFotoSecildi(this)">
     </div>
   </div>`;
 }
@@ -2825,13 +2951,13 @@ function renderVeriGirisi(el) {
           + '</div>'
           + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">'
           + '<div><label style="font-size:0.65rem;color:#166534;font-weight:600;display:block;margin-bottom:2px;">✅ D</label>'
-          + '<input type="number" min="0" id="' + key + '_d" value="' + (saved.d||'') + '" placeholder="0" data-key="' + key + '" data-sinav="' + d.sinav + '" data-no="' + no + '" oninput="vgOtomatikKaydetBtn(this)"'
+          + '<input autocomplete="off" type="number" min="0" id="' + key + '_d" value="' + (saved.d||'') + '" placeholder="0" data-key="' + key + '" data-sinav="' + d.sinav + '" data-no="' + no + '" oninput="vgOtomatikKaydetBtn(this)"'
           + ' style="width:100%;background:#fff;border:1px solid rgba(180,140,60,0.3);border-radius:7px;padding:6px 7px;color:#3a2a15;font-size:0.85rem;box-sizing:border-box;"></div>'
           + '<div><label style="font-size:0.65rem;color:#b91c1c;font-weight:600;display:block;margin-bottom:2px;">❌ Y</label>'
-          + '<input type="number" min="0" id="' + key + '_y" value="' + (saved.y||'') + '" placeholder="0" data-key="' + key + '" data-sinav="' + d.sinav + '" data-no="' + no + '" oninput="vgOtomatikKaydetBtn(this)"'
+          + '<input autocomplete="off" type="number" min="0" id="' + key + '_y" value="' + (saved.y||'') + '" placeholder="0" data-key="' + key + '" data-sinav="' + d.sinav + '" data-no="' + no + '" oninput="vgOtomatikKaydetBtn(this)"'
           + ' style="width:100%;background:#fff;border:1px solid rgba(180,140,60,0.3);border-radius:7px;padding:6px 7px;color:#3a2a15;font-size:0.85rem;box-sizing:border-box;"></div>'
           + '<div><label style="font-size:0.65rem;color:#92703a;font-weight:600;display:block;margin-bottom:2px;">⬜ B</label>'
-          + '<input type="number" min="0" id="' + key + '_b" value="' + (saved.b||'') + '" placeholder="0" data-key="' + key + '" data-sinav="' + d.sinav + '" data-no="' + no + '" oninput="vgOtomatikKaydetBtn(this)"'
+          + '<input autocomplete="off" type="number" min="0" id="' + key + '_b" value="' + (saved.b||'') + '" placeholder="0" data-key="' + key + '" data-sinav="' + d.sinav + '" data-no="' + no + '" oninput="vgOtomatikKaydetBtn(this)"'
           + ' style="width:100%;background:#fff;border:1px solid rgba(180,140,60,0.3);border-radius:7px;padding:6px 7px;color:#3a2a15;font-size:0.85rem;box-sizing:border-box;"></div>'
           + '</div></div>';
       }).join('');
@@ -3048,13 +3174,13 @@ function vgRenderBransTestler(dersKey, ki) {
       + '<div id="vgbdtbody-' + ki + '-' + t + '" style="display:none;padding:0 12px 10px;">'
       + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">'
       + '<div><label style="font-size:0.65rem;color:var(--green);font-weight:600;display:block;margin-bottom:2px;">✅ Doğru</label>'
-      + '<input type="number" min="0" id="' + tkey + '_d" value="' + (saved.d||'') + '" placeholder="0" data-tkey="' + tkey + '" data-ki="' + ki + '" data-t="' + t + '" oninput="vgKaydetBdTest(this)"'
+      + '<input autocomplete="off" type="number" min="0" id="' + tkey + '_d" value="' + (saved.d||'') + '" placeholder="0" data-tkey="' + tkey + '" data-ki="' + ki + '" data-t="' + t + '" oninput="vgKaydetBdTest(this)"'
       + ' style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 7px;color:var(--text1);font-size:0.85rem;box-sizing:border-box;"></div>'
       + '<div><label style="font-size:0.65rem;color:var(--red);font-weight:600;display:block;margin-bottom:2px;">❌ Yanlış</label>'
-      + '<input type="number" min="0" id="' + tkey + '_y" value="' + (saved.y||'') + '" placeholder="0" data-tkey="' + tkey + '" data-ki="' + ki + '" data-t="' + t + '" oninput="vgKaydetBdTest(this)"'
+      + '<input autocomplete="off" type="number" min="0" id="' + tkey + '_y" value="' + (saved.y||'') + '" placeholder="0" data-tkey="' + tkey + '" data-ki="' + ki + '" data-t="' + t + '" oninput="vgKaydetBdTest(this)"'
       + ' style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 7px;color:var(--text1);font-size:0.85rem;box-sizing:border-box;"></div>'
       + '<div><label style="font-size:0.65rem;color:var(--text3);font-weight:600;display:block;margin-bottom:2px;">⬜ Boş</label>'
-      + '<input type="number" min="0" id="' + tkey + '_b" value="' + (saved.b||'') + '" placeholder="0" data-tkey="' + tkey + '" data-ki="' + ki + '" data-t="' + t + '" oninput="vgKaydetBdTest(this)"'
+      + '<input autocomplete="off" type="number" min="0" id="' + tkey + '_b" value="' + (saved.b||'') + '" placeholder="0" data-tkey="' + tkey + '" data-ki="' + ki + '" data-t="' + t + '" oninput="vgKaydetBdTest(this)"'
       + ' style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 7px;color:var(--text1);font-size:0.85rem;box-sizing:border-box;"></div>'
       + '</div>'
       + '<div id="vgbdtmsg-' + ki + '-' + t + '" style="font-size:0.75rem;color:var(--green);margin-top:4px;display:none;">✅ Kaydedildi</div>'
@@ -3151,13 +3277,13 @@ function vgRenderTestler(dersKey, ki) {
       + '<div id="vgtbody-' + ki + '-' + t + '" style="display:none;padding:0 12px 10px;">'
       + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">'
       + '<div><label style="font-size:0.65rem;color:var(--green);font-weight:600;display:block;margin-bottom:2px;">✅ Doğru</label>'
-      + '<input type="number" min="0" id="' + tkey + '_d" value="' + (saved.d||'') + '" placeholder="0" data-tkey="' + tkey + '" data-ki="' + ki + '" data-t="' + t + '" oninput="vgKaydetTest(this)"'
+      + '<input autocomplete="off" type="number" min="0" id="' + tkey + '_d" value="' + (saved.d||'') + '" placeholder="0" data-tkey="' + tkey + '" data-ki="' + ki + '" data-t="' + t + '" oninput="vgKaydetTest(this)"'
       + ' style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 7px;color:var(--text1);font-size:0.85rem;box-sizing:border-box;"></div>'
       + '<div><label style="font-size:0.65rem;color:var(--red);font-weight:600;display:block;margin-bottom:2px;">❌ Yanlış</label>'
-      + '<input type="number" min="0" id="' + tkey + '_y" value="' + (saved.y||'') + '" placeholder="0" data-tkey="' + tkey + '" data-ki="' + ki + '" data-t="' + t + '" oninput="vgKaydetTest(this)"'
+      + '<input autocomplete="off" type="number" min="0" id="' + tkey + '_y" value="' + (saved.y||'') + '" placeholder="0" data-tkey="' + tkey + '" data-ki="' + ki + '" data-t="' + t + '" oninput="vgKaydetTest(this)"'
       + ' style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 7px;color:var(--text1);font-size:0.85rem;box-sizing:border-box;"></div>'
       + '<div><label style="font-size:0.65rem;color:var(--text3);font-weight:600;display:block;margin-bottom:2px;">⬜ Boş</label>'
-      + '<input type="number" min="0" id="' + tkey + '_b" value="' + (saved.b||'') + '" placeholder="0" data-tkey="' + tkey + '" data-ki="' + ki + '" data-t="' + t + '" oninput="vgKaydetTest(this)"'
+      + '<input autocomplete="off" type="number" min="0" id="' + tkey + '_b" value="' + (saved.b||'') + '" placeholder="0" data-tkey="' + tkey + '" data-ki="' + ki + '" data-t="' + t + '" oninput="vgKaydetTest(this)"'
       + ' style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:6px 7px;color:var(--text1);font-size:0.85rem;box-sizing:border-box;"></div>'
       + '</div>'
       + '<div id="vgtmsg-' + ki + '-' + t + '" style="font-size:0.75rem;color:var(--green);margin-top:4px;display:none;">✅ Kaydedildi</div>'
@@ -3350,6 +3476,10 @@ let tytDenemeSt = {
 function switchToTab(tab) {
   if (tvAnalizBorrow && tab === 'dashboard') { tvAnalizGeriDon(); return; }
   if (tvVgBorrow && tab === 'dashboard') { tvVgGeriDon(); return; }
+  // Bir önceki ekranda (ör. Veri Girişi'nde bir konuya doğru/yanlış girildiyse) bekleyen bulut
+  // yazması varsa, başka bir sekmeye geçmeden önce hemen gönderilir — 1 saniyelik bekleme
+  // sırasında sekme değiştirilirse o veri kaybolmasın diye.
+  cloudFlushAllPending();
   if (state.currentTab && state.currentTab !== tab) {
     tabHistory.push(state.currentTab);
     if (tabHistory.length > 20) tabHistory.shift();
@@ -3366,6 +3496,7 @@ function switchToTab(tab) {
 }
 
 function goBack() {
+  cloudFlushAllPending();
   if (tabHistory.length === 0) {
     switchToTab('dashboard');
     return;
@@ -3510,7 +3641,7 @@ function renderKazanimCard(ders, idx, k, renk) {
 
       <!-- YouTube Link -->
       <div style="display:flex;gap:8px;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);margin-bottom:12px;">
-        <input type="url" placeholder="YouTube video linki..." 
+        <input autocomplete="off" type="url" placeholder="YouTube video linki..." 
           style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.82rem;outline:none;"
           value="${kd.ytLink || ''}"
           id="ytinput_${safeId}"
@@ -3541,9 +3672,9 @@ function renderKazanimCard(ders, idx, k, renk) {
               return `
               <tr>
                 <td class="test-num">T${ti+1}</td>
-                <td><input class="score-input d-input" type="number" min="0" value="${t.d}" placeholder="0" oninput="saveTest('${ders}',${idx},${ti},'d',this.value,'${safeId}')"></td>
-                <td><input class="score-input y-input" type="number" min="0" value="${t.y}" placeholder="0" oninput="saveTest('${ders}',${idx},${ti},'y',this.value,'${safeId}')"></td>
-                <td><input class="score-input b-input" type="number" min="0" value="${t.b}" placeholder="0" oninput="saveTest('${ders}',${idx},${ti},'b',this.value,'${safeId}')"></td>
+                <td><input autocomplete="off" class="score-input d-input" type="number" min="0" value="${t.d}" placeholder="0" oninput="saveTest('${ders}',${idx},${ti},'d',this.value,'${safeId}')"></td>
+                <td><input autocomplete="off" class="score-input y-input" type="number" min="0" value="${t.y}" placeholder="0" oninput="saveTest('${ders}',${idx},${ti},'y',this.value,'${safeId}')"></td>
+                <td><input autocomplete="off" class="score-input b-input" type="number" min="0" value="${t.b}" placeholder="0" oninput="saveTest('${ders}',${idx},${ti},'b',this.value,'${safeId}')"></td>
                 <td class="net-cell" id="net_${safeId}_${ti}">${net}</td>
                 <td class="pct-cell" style="${pcls}" id="pct_${safeId}_${ti}">${p !== '—' ? p+'%' : '—'}</td>
               </tr>`;
