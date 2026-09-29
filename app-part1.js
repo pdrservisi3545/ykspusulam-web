@@ -299,6 +299,39 @@ function cloudSaveDocDebounced(col, id, data) {
 // alanlarından tek tek kayıt SİLMEZ -- sadece ekler/günceller -- bu yüzden merge:true burada
 // güvenlidir; dizi alanları [ör. bildirimler, kavanoz.fotograflar] Firestore'da birleştirilmez,
 // yazıldıklarında olduğu gibi değişir, ama bu zaten öncekiyle aynı davranıştır, bir gerileme değil.)
+// ============================================================
+//  🛟 OTOMATİK GÜNLÜK YEDEK (states_backup) — "kurtarma planı"
+//  Bir öğrencinin verisi her buluta kaydedildiğinde (günde en fazla 1 kez, gereksiz yazma
+//  trafiğini önlemek için), o anki TAM verinin bir kopyası AYRI bir koleksiyona (states_backup)
+//  da yazılır. Haftanın 7 gününe (paz/pzt/sal/car/per/cum/cmt) göre SABİT 7 yuvaya yazıldığı için
+//  otomatik olarak her zaman "son 7 günün" bir yedeği tutulur — bir hafta sonra o günün yuvası
+//  kendiliğinden yeni bir yedekle değişir, ekstra silme/temizlik kodu hiç gerekmez.
+//  ÇOK ÖNEMLİ GÜVENLİK KURALI: bu yedekleme kesinlikle "best effort"tur — yani içinde ne olursa
+//  olsun (ağ hatası, beklenmeyen veri şekli, vs.) ANA kaydetme akışını asla etkilemez, asla
+//  bekletmez (await edilmez, sonucunu kimse beklemez) ve asla bir hata fırlatmaz. Bu yüzden asıl
+//  kaydetme (cloudFlushOne'daki normal .set) her zaman TAMAMEN bu fonksiyondan bağımsız çalışır;
+//  yedekleme tamamen başarısız olsa bile öğrenci/öğretmen hiçbir şey fark etmez, uygulama normal
+//  şekilde çalışmaya devam eder.
+// ============================================================
+const YEDEK_GUN_ADLARI = ['paz','pzt','sal','car','per','cum','cmt'];
+const cloudYedekSonZaman = {}; // studentId -> son yedek alma zamanı (ms)
+function cloudYedekAlBestEffort(studentId, data) {
+  try {
+    if (!cloud.on || !cloud.db || !studentId) return;
+    const simdi = Date.now();
+    const sonAlinan = cloudYedekSonZaman[studentId] || 0;
+    if (simdi - sonAlinan < 6 * 60 * 60 * 1000) return; // aynı öğrenci için 6 saatten sık yedek almaya çalışma
+    cloudYedekSonZaman[studentId] = simdi;
+    const gun = YEDEK_GUN_ADLARI[new Date().getDay()];
+    const yedekId = studentId + '_' + gun;
+    let kopya;
+    try { kopya = JSON.parse(JSON.stringify(data)); } catch(e) { return; }
+    cloud.db.collection('states_backup').doc(yedekId).set({
+      studentId: studentId, gun: gun, tarih: new Date().toISOString(), data: kopya
+    }).catch(function(){ /* yedekleme başarısız olsa bile sessizce geç, ana akışı etkileme */ });
+  } catch(e) { /* yedekleme fonksiyonu ASLA ana kaydetme akışını bozmamalı */ }
+}
+
 function cloudFlushOne(k) {
   const pending = cloudPendingWrites[k];
   if (!pending) return;
@@ -306,6 +339,10 @@ function cloudFlushOne(k) {
   delete cloudTimers[k];
   delete cloudPendingWrites[k];
   cloud.db.collection(pending.col).doc(pending.id).set(JSON.parse(JSON.stringify(pending.data)), { merge: true }).catch(e => console.warn(e));
+  // Yedekleme SADECE öğrenci "states" belgeleri için ve ana yazmadan tamamen bağımsız/ek olarak.
+  if (pending.col === 'states') {
+    try { cloudYedekAlBestEffort(pending.id, pending.data); } catch(e){}
+  }
 }
 function cloudFlushAllPending() {
   Object.keys(cloudPendingWrites).forEach(k => cloudFlushOne(k));
