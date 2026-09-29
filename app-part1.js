@@ -1685,7 +1685,12 @@ function renderAnaliz(o) {
       });
       const soru = dd + yy + bb;
       if (!soru && !calisilan) return; // hiç dokunulmamış ders listede görünmesin
-      const basari = soru ? Math.round(dd / soru * 100) : null;
+      // NOT: "Ders Başarısı" sekmesiyle (ve öğrencinin kendi "Derslerim"/"Zayıf Konular"
+      // ekranlarıyla) birebir aynı, YKS'nin gerçek puanlama mantığını kullanan net-tabanlı
+      // formül: net = doğru - yanlış/4. Eskiden burada sadece doğru/toplam hesaplanıyordu,
+      // bu da yanlışları hiç cezalandırmadığı için "Ders Başarısı" sekmesinden farklı (ve
+      // olduğundan yüksek) bir yüzde gösteriyordu.
+      const basari = soru ? Math.max(0, Math.round((dd - yy / 4) / soru * 100)) : null;
       const renk = basari === null ? 'var(--text3)' : basari >= 75 ? 'var(--green)' : basari >= 50 ? 'var(--accent)' : 'var(--red)';
       cards += `
         <div class="panel-list-item">

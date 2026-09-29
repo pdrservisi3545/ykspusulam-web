@@ -1317,6 +1317,27 @@ function baHesaplaToplamSoru() {
 }
 
 // Veri Girişi + eski Denemeler + Soru Bankası kayıtlarının zaman damgasına göre gün bazlı toplam soru sayısı
+// Öğrencinin TÜM Veri Girişi (vgkz_/vgd_/vgbd_) anahtarlarını döner.
+// NOT: Bu anahtarlar artık öğrenciye özel olarak state.vg içinde tutuluyor (bkz. vgIsPerStudentKey
+// yorumu, ~satır 1395); ham localStorage'da yeni girilen hiçbir kayıt ARTIK GÖRÜNMEZ. Eskiden
+// (yanlışlıkla) sadece ham localStorage taranıyordu; bu yüzden Veri Girişi'nde girilen sorular
+// "Toplam Soru Sayısı" ve "Günlük Ortalama"ya hiç yansımıyordu. Burada hem state.vg (asıl/güncel
+// kaynak) hem de ham localStorage (eski, göç etmemiş kayıtlar için geriye dönük uyumluluk) taranıp
+// anahtar isimleri birleştirilir; değer okuması yine vgGetItem() ile yapılır (o da doğru kaynağı seçer).
+function baVgTumAnahtarlar() {
+  const keys = new Set();
+  try {
+    Object.keys((state && state.vg) || {}).forEach(k => { if (vgIsPerStudentKey(k)) keys.add(k); });
+  } catch(e){}
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && vgIsPerStudentKey(key)) keys.add(key);
+    }
+  } catch(e){}
+  return Array.from(keys);
+}
+
 function baGunlukVeri() {
   const gunler = {}; // 'YYYY-MM-DD' -> sayi
   const gunEkle = (ts, adet) => {
@@ -1325,16 +1346,12 @@ function baGunlukVeri() {
     gunler[gunKey] = (gunler[gunKey] || 0) + adet;
   };
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key) continue;
-      if (key.indexOf('vgkz_') === 0 || key.indexOf('vgd_') === 0 || key.indexOf('vgbd_') === 0) {
-        try {
-          const s = JSON.parse(vgGetItem(key) || '{}');
-          gunEkle(s.ts, (+s.d || 0) + (+s.y || 0) + (+s.b || 0));
-        } catch(e){}
-      }
-    }
+    baVgTumAnahtarlar().forEach(key => {
+      try {
+        const s = JSON.parse(vgGetItem(key) || '{}');
+        gunEkle(s.ts, (+s.d || 0) + (+s.y || 0) + (+s.b || 0));
+      } catch(e){}
+    });
   } catch(e){}
   // Eski "Denemeler" sekmesi — deneme slotunun son kayıt zamanı, o slottaki toplam soru sayısına atanır
   // NOT: Bu zaman damgası ders bazlı değil, tüm deneme için tektir (slotun son düzenlenme anı);
@@ -1424,30 +1441,23 @@ function baHesaplaDersBazliDetay() {
   return sonuc;
 }
 
+// NOT: "Toplam Soru Sayısı", kullanıcının istediği gibi SADECE iki kaynağın toplamıdır:
+// (1) Veri Girişi'nde (Derslerim > konu/test girişleri) çözülen soru sayısı, ve
+// (2) Soru Bankası'nda cevaplanan soru sayısı. Denemeler (TYT/AYT tam deneme sonuçları) BURAYA
+// kasıtlı olarak DAHİL EDİLMEZ — onlar zaten kendi "Denemelerim" ekranında ayrı gösteriliyor.
+// Ayrıca Veri Girişi anahtarları artık öğrenciye özel state.vg içinde tutulduğu için (bkz.
+// baVgTumAnahtarlar), eskisi gibi sadece ham localStorage taranarak BULUNAMIYORLARDI; bu yüzden
+// toplam soru sayısı eksik/yanlış çıkıyordu. Artık state.vg + ham localStorage (eski kayıtlar
+// için) birlikte taranıyor.
 function baHesaplaSoruDurum() {
   let dogru = 0, yanlis = 0, bos = 0;
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key) continue;
-      if (key.indexOf('vgkz_') === 0 || key.indexOf('vgd_') === 0 || key.indexOf('vgbd_') === 0) {
-        try {
-          const s = JSON.parse(vgGetItem(key) || '{}');
-          dogru += (+s.d || 0); yanlis += (+s.y || 0); bos += (+s.b || 0);
-        } catch(e){}
-      }
-    }
-  } catch(e){}
-  try {
-    for (let no = 1; no <= TOPLAM_DENEME; no++) {
-      const den = (state.denemeler || {})[no];
-      if (!den) continue;
-      DENEME_DERSLER.forEach(dr => {
-        const dv = den.dersler[dr.key];
-        if (!dv) return;
-        dogru += (+dv.d || 0); yanlis += (+dv.y || 0); bos += (+dv.b || 0);
-      });
-    }
+    baVgTumAnahtarlar().forEach(key => {
+      try {
+        const s = JSON.parse(vgGetItem(key) || '{}');
+        dogru += (+s.d || 0); yanlis += (+s.y || 0); bos += (+s.b || 0);
+      } catch(e){}
+    });
   } catch(e){}
   try {
     Object.keys(sbState.cevaplar || {}).forEach(soruId => {
