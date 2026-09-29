@@ -254,7 +254,9 @@ async function cloudRefreshUsers(zorla) {
 }
 function cloudSaveUser(user) {
   if (!cloud.on) return Promise.resolve(true);
-  return cloud.db.collection('users').doc(user.id).set(user)
+  // { merge: true }: states/{id} ile aynı sebep -- iki farklı cihaz/sekme aynı anda kullanıcı
+  // profilini güncellerse, bayat bir kopya diğerinin az önce yazdığı alanı silmesin.
+  return cloud.db.collection('users').doc(user.id).set(user, { merge: true })
     .then(() => true)
     .catch(e => { console.warn('Kullanıcı kaydı buluta yazılamadı:', e); return false; });
 }
@@ -279,13 +281,31 @@ function cloudSaveDocDebounced(col, id, data) {
   clearTimeout(cloudTimers[k]);
   cloudTimers[k] = setTimeout(() => cloudFlushOne(k), 1000);
 }
+// ⚠️ KRİTİK VERİ GÜVENLİĞİ NOTU: neden { merge: true }?
+// saveState(), HER kayıtta öğrencinin TÜM state nesnesini (vg, kazanimlar, denemeler, sb, kisisel,
+// student, ...) buluta yazar. Eğer öğrencinin cihazındaki uygulama uzun süre kapatılmadan açık
+// kaldıysa (arka planda askıda), hafızadaki `state` nesnesi ESKİ bir andaki kopyayı tutabilir.
+// Öğrenci sadece "Kişisel Bilgilerim" ekranında tek bir alanı (ör. başlangıç tarihini) değiştirip
+// kaydettiğinde bile, saveState() o ESKİ/EKSİK `state.vg` nesnesini de buluta gönderiyordu ve eski
+// kodda kullanılan sade .set(data) YENİ dokümanı TAMAMEN eskisinin üzerine yazıyordu -- bu da
+// öğrencinin o ana kadar başka bir anda/cihazda girdiği Veri Girişi sayılarının (vg içindeki
+// vgkz_... anahtarlarının) sessizce silinmesine yol açıyordu ("konu listeleri duruyor ama içindeki
+// sayılar kayboluyor" hatası buradan kaynaklanıyordu).
+// ÇÖZÜM: Firestore'un { merge: true } seçeneği, iç içe geçmiş obje (map) alanlarını -- vg,
+// kazanimlar, sb.cevaplar, denemeler, sayac gibi -- ESKİ belgeyle DERİNLEMESİNE birleştirir: yeni
+// yazılan anahtarlar güncellenir, ama yeni yazıda bulunmayan (yani cihazda henüz görünmeyen, başka
+// bir yerde eklenmiş) eski anahtarlar SİLİNMEZ, korunur. Bu sayede "bayat" bir cihaz kopyası artık
+// bulutta biriken daha güncel veriyi asla silemez. (Not: bu uygulamada hiçbir özellik bu obje
+// alanlarından tek tek kayıt SİLMEZ -- sadece ekler/günceller -- bu yüzden merge:true burada
+// güvenlidir; dizi alanları [ör. bildirimler, kavanoz.fotograflar] Firestore'da birleştirilmez,
+// yazıldıklarında olduğu gibi değişir, ama bu zaten öncekiyle aynı davranıştır, bir gerileme değil.)
 function cloudFlushOne(k) {
   const pending = cloudPendingWrites[k];
   if (!pending) return;
   clearTimeout(cloudTimers[k]);
   delete cloudTimers[k];
   delete cloudPendingWrites[k];
-  cloud.db.collection(pending.col).doc(pending.id).set(JSON.parse(JSON.stringify(pending.data))).catch(e => console.warn(e));
+  cloud.db.collection(pending.col).doc(pending.id).set(JSON.parse(JSON.stringify(pending.data)), { merge: true }).catch(e => console.warn(e));
 }
 function cloudFlushAllPending() {
   Object.keys(cloudPendingWrites).forEach(k => cloudFlushOne(k));
