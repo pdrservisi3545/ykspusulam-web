@@ -869,9 +869,29 @@ function yuklemeGizle() {
   const el = document.getElementById('yuklemeEkrani');
   if (el) el.style.display = 'none';
 }
+// ============================================================
+//  ⚠️ KRİTİK VERİ GÜVENLİĞİ NOTU (enterApp / startApp)
+//  Eskiden: cloudLoadDoc(), hem "bu öğrencinin buluttaki kaydı gerçekten yok" hem de
+//  "ağ hatası/zaman aşımı nedeniyle okunamadı" durumlarında AYNI ŞEKİLDE null dönüyordu.
+//  enterApp() bu iki durumu ayıramadığı için, internet yavaşlığı/kesintisi yüzünden
+//  mevcut (aylarca veri girmiş) bir öğrencinin kaydı okunamadığında, öğrenciye SIFIRDAN
+//  "İlk Kurulum" (setupScreen) ekranı gösteriliyordu. Öğrenci bu ekranı "bilgilerimi
+//  güncelle" sanıp doldurup "Başla" derse, startApp() → saveState() BOŞ bir profili
+//  buluta yazıp öğrencinin GERÇEK verisinin ÜZERİNE YAZIYOR ve geri dönüşü olmayan bir
+//  veri kaybına yol açıyordu ("sanki yeni öğrenciymiş gibi, tüm verisi silinmiş" hatası
+//  buradan kaynaklanıyordu).
+//  ÇÖZÜM: Bulut okuması sırasında bir HATA/ZAMAN AŞIMI olduysa (ogrenciBulutDurumBelirsiz),
+//  bu ASLA "yeni öğrenci" olarak yorumlanmaz — bunun yerine bağlantı hatası ekranı
+//  gösterilip yeniden denemesi istenir. "İlk Kurulum" ekranı SADECE bulut açıkken
+//  okuma başarıyla tamamlanıp kayıt gerçekten bulunamadığında, ya da bulut hiç
+//  kullanılmıyorsa (tamamen yerel/çevrimdışı mod) gösterilir.
+// ============================================================
+let ogrenciBulutDurumBelirsiz = false;
+
 async function enterApp() {
   document.getElementById('authScreen').style.display = 'none';
   yuklemeGoster();
+  ogrenciBulutDurumBelirsiz = false;
 
   // Bulut modunda: role göre gerekli verileri önceden indir.
   // Bu işlem ne olursa olsun uygulamayı SONSUZA KADAR bekletmesin diye
@@ -883,7 +903,13 @@ async function enterApp() {
       cloud.videolar = (await cloudLoadDoc('genel', 'videolar')) || {};
       await cloudRefreshMesajlar();
       if (currentUser.role === 'ogrenci') {
-        cloud.states[currentUser.id] = await cloudLoadDoc('states', currentUser.id);
+        try {
+          const doc = await cloud.db.collection('states').doc(currentUser.id).get();
+          cloud.states[currentUser.id] = doc.exists ? doc.data() : null;
+        } catch(e) {
+          console.warn('Öğrenci verisi okunamadı (ağ/izin hatası):', e);
+          ogrenciBulutDurumBelirsiz = true; // var mı yok mu bilmiyoruz -- ASLA "yeni öğrenci" sayma
+        }
         cloud.programs[currentUser.id] = await cloudLoadDoc('programs', currentUser.id);
       } else {
         await cloudRefreshUsers();
@@ -896,21 +922,29 @@ async function enterApp() {
         }
       }
     })();
+    let zamanAsimiOldu = false;
     try {
       await Promise.race([
         yukleme,
-        new Promise(resolve => setTimeout(resolve, 10000))
+        new Promise(resolve => setTimeout(() => { zamanAsimiOldu = true; resolve(); }, 10000))
       ]);
-    } catch(e) { console.warn('Bulut verisi yüklenirken sorun oluştu:', e); }
+    } catch(e) { console.warn('Bulut verisi yüklenirken sorun oluştu:', e); ogrenciBulutDurumBelirsiz = true; }
+    if (zamanAsimiOldu && currentUser.role === 'ogrenci') ogrenciBulutDurumBelirsiz = true;
   }
   yuklemeGizle();
 
   if (currentUser.role === 'ogrenci') {
+    const yerelYedekVarMi = !!vgGetItem(stateKey());
     if (loadState() && state.student.name) {
       if (!state.sb) state.sb = sbVarsayilanState();
       if (!state.vg) state.vg = {};
       sbState = state.sb;
       showApp();
+    } else if (cloud.on && ogrenciBulutDurumBelirsiz && !yerelYedekVarMi) {
+      // Bulut verisi okunamadı/zaman aşımına uğradı VE bu cihazda yerel bir yedek de yok.
+      // Öğrencinin gerçekten yeni mi, yoksa sadece bağlantı sorunu mu yaşadığı belirsiz --
+      // bu yüzden asla boş "İlk Kurulum" ekranını göstermiyoruz.
+      renderBulutBaglantiHatasi();
     } else {
       if (!state.sb) state.sb = sbVarsayilanState();
       if (!state.vg) state.vg = {};
@@ -923,6 +957,26 @@ async function enterApp() {
   } else {
     renderRolePanel();
   }
+}
+
+// Bulut verisi okunamadığında (ör. internet kesintisi) gösterilen güvenli bekleme ekranı.
+// "İlk Kurulum" ekranının yerine geçer; kullanıcı asla yanlışlıkla profilini sıfırdan
+// dolduramaz -- sadece internetini kontrol edip tekrar deneyebilir.
+function renderBulutBaglantiHatasi() {
+  const el = document.getElementById('authScreen');
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;">
+      <div class="setup-card" style="text-align:center;max-width:380px;">
+        <div style="font-size:2.5rem;margin-bottom:10px;">📡</div>
+        <h2 style="font-family:'Playfair Display',serif;color:var(--accent);margin-bottom:10px;">Verilerine Ulaşılamadı</h2>
+        <p style="color:var(--text2);font-size:0.92rem;margin-bottom:20px;line-height:1.5;">
+          İnternet bağlantısı zayıf olduğu için kayıtlı verilerin şu an güvenli şekilde yüklenemedi.
+          Endişelenme, verilerin kaybolmadı — bağlantın düzelince tekrar dene.
+        </p>
+        <button class="btn-primary" style="width:100%;" onclick="location.reload()">🔄 Tekrar Dene</button>
+      </div>
+    </div>`;
 }
 
 // Veli & Öğretmen paneli
@@ -1905,6 +1959,13 @@ window.addEventListener('load', () => {
 });
 
 function startApp() {
+  // Ek güvenlik önlemi: bulut verisi okunamadığı/zaman aşımına uğradığı için "yeni öğrenci
+  // olabilir mi" belirsizse, buradan asla devam ettirmeyiz -- aksi halde bu, olası GERÇEK
+  // (ve aylarca birikmiş) öğrenci verisinin boş bir profille buluta yazılıp silinmesine yol açar.
+  if (cloud.on && ogrenciBulutDurumBelirsiz) {
+    alert('İnternet bağlantısı sorunu nedeniyle mevcut verilerin doğrulanamadı. Verilerinin güvenliği için işlem durduruldu.\n\nLütfen internet bağlantını kontrol edip uygulamayı kapatıp tekrar aç.');
+    return;
+  }
   const name = document.getElementById('inputName').value.trim();
   if (!name) { alert('Lütfen adını gir!'); return; }
   state.student = {
