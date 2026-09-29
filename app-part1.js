@@ -1933,8 +1933,23 @@ function kavanozFotoSenkronla(id) {
 function stateKey() {
   return currentUser ? ('ykspusulam_' + currentUser.id) : 'ykspusulam';
 }
+// ⚠️ NOT (Soru Kavanozu fotoğrafları için depolama düzeltmesi):
+// Kavanoz fotoğrafları YUKARIDA açıklandığı gibi kendi ayrı, cihaza özel yerinde
+// (kavanozFotoLocalKey / localStorage['ykspusulam_kavanozfoto_<id>']) tutulur ve state
+// yüklendiğinde kavanozFotoSenkronla() tarafından HER ZAMAN oradan `state.kavanoz.fotograflar`'a
+// geri yazılır. Eskiden saveState()'in YEREL (cihaz) yazması bu diziyi olduğu gibi -- STRİPLEMEDEN
+// -- genel state kaydının (localStorage['ykspusulam_<id>']) içine de gömüyordu; bulut yazması
+// zaten fotoğrafları çıkarıyordu ama yerel yazması çıkarmıyordu. Sonuç: her fotoğraf, telefonun
+// hafızasında İKİ KEZ duruyordu -- bir kez kendi ayrı yerinde, bir kez de öğrencinin ana state
+// kaydının içinde -- gereksiz yere iki katı yer kaplıyor ve cihazın depolama sınırına (localStorage
+// kotası) daha çabuk çarpılmasına yol açıyordu. kavanozFotoSenkronla() her state yüklemesinde
+// fotoğrafları zaten doğru yerden geri getirdiği için, ana state kaydından fotoğrafları çıkarmak
+// hiçbir veri kaybına yol açmaz -- burada da (buluttakiyle birebir aynı mantıkla) çıkarıyoruz.
 function saveState() {
-  const ok = vgSetItem(stateKey(), JSON.stringify(state));
+  const stateYerelIcin = Object.assign({}, state, {
+    kavanoz: { fotograflar: [], sorular: (state.kavanoz && state.kavanoz.sorular) || [] }
+  });
+  const ok = vgSetItem(stateKey(), JSON.stringify(stateYerelIcin));
   if (cloud.on && currentUser) {
     cloud.states[currentUser.id] = state;
     // Fotoğraflar asla buluta gönderilmez: bulut kopyasında fotoğraf dizisi boş bırakılır.
@@ -3045,18 +3060,29 @@ function renderVeriGirisi(el) {
     const dersler = ALL_DENEME_DERSLER;
     const TOPLAM_VG_DENEME = 30;
 
+    // NOT: Bu satırdaki "Net" rozeti eskiden TYT + AYT + YDT derslerinin hepsini TEK bir toplam
+    // net'te birleştiriyordu (aynı "Deneme N" satırı altında farklı sınav türleri bir arada
+    // listelendiği için). Ama TYT ve AYT (ve YDT) birbirinden tamamen farklı sınavlardır — netleri
+    // asla toplanmaz. Bu yüzden "Başarı Analizim > Denemelerim" grafiği her sınav türü için AYRI
+    // net hesaplıyordu (baVgdDenemeNet), ve buradaki tek/birleşik "Net" rozeti o grafikteki hiçbir
+    // değerle eşleşmiyordu. Çözüm: burada da her sınav türü için AYRI net hesaplanır (aşağıdaki
+    // topNetler), tıpkı baVgdDenemeNet'teki gibi — böylece iki ekran her zaman birebir aynı sayıyı
+    // gösterir.
     const denemeSatirlar = Array.from({length: TOPLAM_VG_DENEME}, (_, i) => {
       const no = i + 1;
-      const hasData = dersler.some(d => {
-        try { const s = JSON.parse(vgGetItem('vgd_' + d.sinav + '_' + no + '_' + d.key) || '{}'); return s.d||s.y||s.b; } catch(e){return false;}
+      const topNetler = {}; // { TYT: net, AYT: net, YDT: net } -- sadece veri girilen sınav türleri
+      ['TYT','AYT','YDT'].forEach(sn => {
+        let net = 0, anyData = false;
+        (DENEME_VG_DERSLER[sn] || []).forEach(d => {
+          try {
+            const s = JSON.parse(vgGetItem('vgd_' + sn + '_' + no + '_' + d.key) || '{}');
+            const dd = +s.d||0, yy = +s.y||0, bb = +s.b||0;
+            if (dd || yy || bb) { anyData = true; net += dd - yy/4; }
+          } catch(e){}
+        });
+        if (anyData) topNetler[sn] = net;
       });
-      const topNet = dersler.reduce((acc, d) => {
-        try {
-          const s = JSON.parse(vgGetItem('vgd_' + d.sinav + '_' + no + '_' + d.key) || '{}');
-          const dd = +s.d||0, yy = +s.y||0;
-          return dd+yy > 0 ? acc + dd - yy/4 : acc;
-        } catch(e){ return acc; }
-      }, 0);
+      const hasData = Object.keys(topNetler).length > 0;
 
       let sonSinav = null;
       const derslerHtml = dersler.map(d => {
@@ -3089,7 +3115,7 @@ function renderVeriGirisi(el) {
         + '<div onclick="vgToggleDeneme(' + no + ')" style="display:flex;align-items:center;padding:14px 16px;cursor:pointer;gap:12px;">'
         + '<span style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#d4af5a,#8a6a2f);color:#2b2008;font-weight:800;font-size:0.85rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;">' + no + '</span>'
         + '<span style="font-weight:700;font-size:0.95rem;flex:1;color:#3a2a15;">Deneme ' + no + '</span>'
-        + (hasData ? '<span style="font-size:0.72rem;color:#166534;font-weight:800;background:#dcfce7;padding:4px 10px;border-radius:20px;">✅ Net: ' + topNet.toFixed(1) + '</span>' : '<span style="font-size:0.72rem;color:#92703a;font-weight:600;background:#f3ead2;padding:4px 10px;border-radius:20px;">Girilmedi</span>')
+        + (hasData ? '<span style="font-size:0.72rem;color:#166534;font-weight:800;background:#dcfce7;padding:4px 10px;border-radius:20px;">✅ ' + Object.keys(topNetler).map(sn => sn + ': ' + topNetler[sn].toFixed(1)).join(' · ') + '</span>' : '<span style="font-size:0.72rem;color:#92703a;font-weight:600;background:#f3ead2;padding:4px 10px;border-radius:20px;">Girilmedi</span>')
         + '<span style="color:#b08a3e;font-size:0.85rem;" id="vgchev-' + no + '">▾</span>'
         + '</div>'
         + '<div id="vgbody-' + no + '" style="display:none;padding:0 16px 16px;">'
