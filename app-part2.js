@@ -1994,6 +1994,14 @@ function baRenderComboChart(noktalar, zoomKey, tikFn, birim) {
     <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="var(--accent)" style="cursor:pointer;" onclick="${tikFn}('${p.etiket}', ${p.deger}, '${birimEtiket}')"></circle>`).join('');
   const etiketler = pts.map(p => `
     <text x="${p.x.toFixed(1)}" y="${h-8}" font-size="9" fill="var(--text3)" text-anchor="middle">${p.etiket}</text>`).join('');
+  // Her mumun/noktanın üzerinde değeri rakamsal olarak gösterir: Net ise olduğu gibi (ör. 46.25),
+  // Puan ise sadece ilk 3 rakamı (tam sayı kısmı, ör. 367,128 -> 367) gösterilir.
+  const degerMetni = (v) => {
+    if (birimEtiket === 'Puan') return String(Math.trunc(v));
+    return Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100);
+  };
+  const degerEtiketleri = pts.map(p => `
+    <text x="${p.x.toFixed(1)}" y="${Math.max(10, p.y - 8).toFixed(1)}" font-size="9" font-weight="700" fill="#3a2a15" text-anchor="middle">${degerMetni(p.deger)}</text>`).join('');
 
   return `
     <div class="ba-line-toolbar">
@@ -2011,6 +2019,7 @@ function baRenderComboChart(noktalar, zoomKey, tikFn, birim) {
         ${cubuklar}
         <path d="${pathD}" fill="none" stroke="var(--accent)" stroke-width="2"/>
         ${noktaDaire}
+        ${degerEtiketleri}
         ${etiketler}
       </svg>
     </div>
@@ -2755,6 +2764,7 @@ function kbSave() {
 // ============================================================
 let dpEditState = { on: false, draft: null, backup: null };
 let dpVideoSecici = null; // {di, ii}
+let dpVideoSeciciDersIdx = null; // Video Seç ekranında hangi dersin açık olduğu (KV_DERSLER index'i)
 
 function dpOwnKey(id) { return 'ykspusulam_dpown_' + id; }
 function dpGetOwn(id) {
@@ -2836,8 +2846,10 @@ function dpKutuMetinKaydet(di, ii, val) {
     p.days[di].items[ii].metin = val;
   }
 }
-function dpKutuEkleModu(di, ii) { dpVideoSecici = { di, ii }; dpRerender(); }
-function dpVideoSeciciKapat() { dpVideoSecici = null; dpRerender(); }
+function dpKutuEkleModu(di, ii) { dpVideoSecici = { di, ii }; dpVideoSeciciDersIdx = null; dpRerender(); }
+function dpVideoSeciciKapat() { dpVideoSecici = null; dpVideoSeciciDersIdx = null; dpRerender(); }
+function dpVideoSeciciDersAc(dersIdx) { dpVideoSeciciDersIdx = dersIdx; dpRerender(); }
+function dpVideoSeciciDersGeri() { dpVideoSeciciDersIdx = null; dpRerender(); }
 function dpVideoSec(baslik, url) {
   if (!dpVideoSecici) return;
   const { di, ii } = dpVideoSecici;
@@ -2849,32 +2861,61 @@ function dpVideoSec(baslik, url) {
   dpRerender();
 }
 
+function dpVideoSeciciDersVideoSayisi(d) {
+  let sayi = 0;
+  const konular = kvKonular(d);
+  konular.forEach((k, i) => { sayi += kvGetVideos(d, i).length; });
+  return sayi;
+}
 function dpRenderVideoSeciciEkrani() {
-  const linkli = [];
-  KV_DERSLER.forEach(d => {
-    const konular = kvKonular(d);
-    konular.forEach((k, i) => {
-      kvGetVideos(d, i).forEach(v => {
-        linkli.push({ baslik: d.ad + ' — ' + k + ' (' + v.ad + ')', url: v.url || '' });
-      });
-    });
-  });
-  const liste = linkli.length
-    ? linkli.map(v => `
-      <div onclick="dpVideoSec('${v.baslik.replace(/'/g, "\\'")}','${(v.url||'').replace(/'/g, "\\'")}')" style="background:rgba(255,252,244,0.92);border:1px solid rgba(150,110,40,0.4);border-radius:10px;padding:10px 12px;margin-bottom:6px;cursor:pointer;font-size:0.8rem;color:#3a2a15;display:flex;align-items:center;gap:8px;">
-        <span style="font-size:1rem;">▶️</span><span style="flex:1;">${v.baslik}</span>
-      </div>`).join('')
-    : '<div style="color:#6b5636;font-size:0.82rem;padding:10px;">Henüz Konu Videoları\'nda link eklenmiş video yok.</div>';
-  return `
+  const wrapAc = (icHtml, baslik, geriOnclick) => `
     <div class="fade-up">
       <div style="position:relative;border-radius:22px;overflow:hidden;padding:18px 14px 22px;background:linear-gradient(rgba(238,225,196,0.9),rgba(238,225,196,0.95));border:1px solid rgba(150,110,40,0.35);box-shadow:0 10px 26px rgba(60,40,10,0.25);">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-          <button onclick="dpVideoSeciciKapat()" style="background:none;border:none;cursor:pointer;padding:0;display:flex;flex-shrink:0;"><img src="${GERI_TUS_ICON}" style="width:32px;height:32px;"></button>
-          <div style="font-family:'Playfair Display',serif;font-size:1.2rem;font-weight:900;color:#3a2a15;">🎬 Video Seç</div>
+          <button onclick="${geriOnclick}" style="background:none;border:none;cursor:pointer;padding:0;display:flex;flex-shrink:0;"><img src="${GERI_TUS_ICON}" style="width:32px;height:32px;"></button>
+          <div style="font-family:'Playfair Display',serif;font-size:1.2rem;font-weight:900;color:#3a2a15;">${baslik}</div>
         </div>
-        ${liste}
+        ${icHtml}
       </div>
     </div>`;
+
+  // Seviye 2: bir ders seçilmiş -- o dersin konu/video listesi gösterilir (buradan seçim yapılır).
+  if (dpVideoSeciciDersIdx !== null && KV_DERSLER[dpVideoSeciciDersIdx]) {
+    const d = KV_DERSLER[dpVideoSeciciDersIdx];
+    const konular = kvKonular(d);
+    const linkli = [];
+    konular.forEach((k, i) => {
+      kvGetVideos(d, i).forEach(v => {
+        linkli.push({ baslik: k + ' — ' + v.ad, url: v.url || '' });
+      });
+    });
+    const liste = linkli.length
+      ? linkli.map(v => `
+        <div onclick="dpVideoSec('${(d.ad + ' — ' + v.baslik).replace(/'/g, "\\'")}','${(v.url||'').replace(/'/g, "\\'")}')" style="background:rgba(255,252,244,0.92);border:1px solid rgba(150,110,40,0.4);border-radius:10px;padding:10px 12px;margin-bottom:6px;cursor:pointer;font-size:0.8rem;color:#3a2a15;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:1rem;">▶️</span><span style="flex:1;">${v.baslik}</span>
+        </div>`).join('')
+      : '<div style="color:#6b5636;font-size:0.82rem;padding:10px;">Bu derste henüz Konu Videoları\'nda link eklenmiş video yok.</div>';
+    return wrapAc(liste, '🎬 ' + d.ad, 'dpVideoSeciciDersGeri()');
+  }
+
+  // Seviye 1: dersler, sınav türüne göre gruplanmış tuşlar halinde listelenir (TYT / AYT / YDT).
+  const gruplar = [
+    { baslik: '📋 TYT Dersleri', tur: 'TYT' },
+    { baslik: '📋 AYT Dersleri', tur: 'AYT' },
+    { baslik: '📋 YDT', tur: 'YDT' }
+  ];
+  const dersTusu = (d, idx) => `
+    <div onclick="dpVideoSeciciDersAc(${idx})" style="cursor:pointer;display:flex;align-items:center;gap:10px;background:rgba(255,252,244,0.92);border:1px solid rgba(150,110,40,0.4);border-radius:10px;padding:10px 12px;margin-bottom:6px;font-size:0.82rem;color:#3a2a15;">
+      <span style="font-size:1rem;">🎬</span><span style="flex:1;font-weight:700;">${d.ad}</span>
+      <span style="color:#8a7a5c;font-size:0.72rem;">${dpVideoSeciciDersVideoSayisi(d)} video ›</span>
+    </div>`;
+  const grupBaslik = (t) => `<div style="font-weight:800;font-size:0.85rem;margin:14px 0 8px;color:#3a2a15;display:flex;align-items:center;gap:8px;"><span style="width:4px;height:16px;background:linear-gradient(180deg,#d4af5a,#8a6a2f);border-radius:2px;"></span>${t}</div>`;
+  const icHtml = gruplar.map(g => {
+    const dersler = KV_DERSLER.map((d, idx) => ({ d, idx })).filter(({d}) => kvSinavEtiket(d) === g.tur);
+    if (!dersler.length) return '';
+    return grupBaslik(g.baslik) + dersler.map(({d, idx}) => dersTusu(d, idx)).join('');
+  }).join('');
+  return wrapAc(icHtml, '🎬 Video Seç — Ders Seç', 'dpVideoSeciciKapat()');
 }
 
 function dpRenderOlusturEkrani(el) {
@@ -5944,7 +5985,7 @@ function renderDenemeSinav(el) {
         <button onclick="denemeSoruGit(${denemeSt.i-1})" ${denemeSt.i===0?'disabled':''} style="flex:1;padding:12px;border:none;border-radius:12px;background:#eef0f4;color:#1e293b;font-weight:700;cursor:pointer;opacity:${denemeSt.i===0?0.4:1};">‹ Önceki</button>
         <button onclick="denemeSoruGit(${denemeSt.i+1})" ${denemeSt.i===denemeSt.sorular.length-1?'disabled':''} style="flex:1;padding:12px;border:none;border-radius:12px;background:#1d4ed8;color:#fff;font-weight:800;cursor:pointer;opacity:${denemeSt.i===denemeSt.sorular.length-1?0.4:1};">Sonraki ›</button>
       </div>
-      <button onclick="denemeBitirOnay()" style="width:100%;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#c0392b,#922b21);color:#fff;font-weight:800;font-size:0.9rem;cursor:pointer;">🏁 Sınavı Bitir</button>
+      <button onclick="denemeBitirOnay()" style="width:100%;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#c0392b,#922b21);color:#fff;font-weight:800;font-size:0.9rem;cursor:pointer;">🏁 Testi Bitir</button>
       <div style="text-align:center;margin-top:10px;font-size:0.7rem;color:#94a3b8;">${cevaplananSayisi}/${denemeSt.sorular.length} cevaplandı</div>
     </div>
   </div>`;
