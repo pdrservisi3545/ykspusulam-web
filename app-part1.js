@@ -114,7 +114,8 @@ let state = {
   kavanoz: { fotograflar: [], sorular: [] }, // Soru Kavanozu: fotograflar=[{id,dataUrl,tarih}], sorular=[{soruId,tarih}]
   bildirimler: [], // Rehber öğretmenden gelen bildirimler: [{mesaj, tarih, okundu, gonderen}]
   sb: { secilenKonu: 'Tümü', seviye: null, filtre: 'Tümü', cevaplar: {}, cevapTs: {}, reveal: {}, sureler: {}, incelemeModu: false, incelemeAcik: {} }, // Soru Bankası cevapları — kalıcı ve kullanıcıya özel olması için state içinde tutulur
-  vg: {} // Veri Girişi / Denemelerim / Branş Denemelerim kutuları (vgkz_/vgd_/vgbd_/vgkbitti_ vb.) — kişiye özel
+  vg: {}, // Veri Girişi / Denemelerim / Branş Denemelerim kutuları (vgkz_/vgd_/vgbd_/vgkbitti_ vb.) — kişiye özel
+  oyunSkorlari: [] // Eğitsel Oyunlar skor geçmişi: [{tur, turAd, puan, dogru, toplam, ts}]
 };
 
 function sbVarsayilanState() {
@@ -1956,6 +1957,7 @@ function loadState() {
       if (!state.bildirimler) state.bildirimler = [];
       if (!state.sb) state.sb = sbVarsayilanState();
       if (!state.vg) state.vg = {};
+      if (!state.oyunSkorlari) state.oyunSkorlari = [];
       kavanozFotoSenkronla(currentUser.id);
       const validTabs = ['dashboard','sorubankasi','denemeler','grafik','veriGirisi','kisiselBilgiler','dersProgramim','konuVideolari','denemelerim','dersSayaci','puanHesaplama','soruKavanozu','meslekKesif','yksNedir','yksBilgi','soruDagilimlari','yillaraGoreSoruDagilimi','haberler','mesajlarim','egitselOyunlar'];
       if (!validTabs.includes(state.currentTab)) state.currentTab = 'dashboard';
@@ -1975,6 +1977,7 @@ function loadState() {
       if (!state.bildirimler) state.bildirimler = [];
       if (!state.sb) state.sb = sbVarsayilanState();
       if (!state.vg) state.vg = {};
+      if (!state.oyunSkorlari) state.oyunSkorlari = [];
       kavanozFotoSenkronla(currentUser ? currentUser.id : null);
       // Tab adını validate et
       const validTabs = ['dashboard','sorubankasi','denemeler','grafik','veriGirisi','kisiselBilgiler','dersProgramim','konuVideolari','denemelerim','dersSayaci','puanHesaplama','soruKavanozu','meslekKesif','yksNedir','yksBilgi','soruDagilimlari','yillaraGoreSoruDagilimi','haberler','mesajlarim','egitselOyunlar'];
@@ -2688,7 +2691,32 @@ const OYUN_SORU_BANKASI = {
     { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Yarın okula gelecek misin?", "Yarın okula gelecek mısın?", "Yarın okula gelecekmisin?", "Yarın okula gelecek mi sin?"], dogru: 0 },
     { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Okula gidiyorum.", "Okul'a gidiyorum.", "Okula' gidiyorum.", "Oku la gidiyorum."], dogru: 0 },
     { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Kaybolmuştu.", "Kayb olmuştu.", "Kayıp olmuştu.", "Kayıb olmuştu."], dogru: 0 },
-    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Hiçbir şey söylemedi.", "Hiç bir şey söylemedi.", "Hiçbirşey söylemedi.", "Hiç biri şey söylemedi."], dogru: 0 }
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Hiçbir şey söylemedi.", "Hiç bir şey söylemedi.", "Hiçbirşey söylemedi.", "Hiç biri şey söylemedi."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Her şey yoluna girecek.", "Herşey yoluna girecek.", "Her-şey yoluna girecek.", "Her  şey yoluna girecek."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Biraz bekleyelim.", "Bir az bekleyelim.", "Bira z bekleyelim.", "Bir-az bekleyelim."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Bir şey söylemedi.", "Birşey söylemedi.", "Bir-şey söylemedi.", "Birşe y söylemedi."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Tertemiz bir odaydı.", "Ter temiz bir odaydı.", "Ter-temiz bir odaydı.", "Tertemi z bir odaydı."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Bilgisayarını tamir ettirdi.", "Bilgi sayarını tamir ettirdi.", "Bilgi-sayarını tamir ettirdi.", "Bilgisayar ını tamir ettirdi."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Toplantı salı günü yapılacak.", "Toplantı Salı günü yapılacak.", "Toplantı SALI günü yapılacak.", "Toplantı salı Günü yapılacak."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Öğretmen Ayşe Hanım geldi.", "öğretmen Ayşe hanım geldi.", "Öğretmen ayşe Hanım geldi.", "Öğretmen Ayşe hanım Geldi."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["İşin %50'si tamamlandı.", "İşin %50 'si tamamlandı.", "İşin % 50'si tamamlandı.", "İşin %50si tamamlandı."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Bu bilgi faydalıdır.", "Bu bilgi faydalidir.", "Bu bilgi faydalıdir.", "Bu bilgi faydalidır."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Sapasağlam bir yapı.", "Sapa sağlam bir yapı.", "Sapa-sağlam bir yapı.", "Sapasağla m bir yapı."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Çay ya da kahve içelim.", "Çay yada kahve içelim.", "Çay ya-da kahve içelim.", "Çay yad a kahve içelim."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Herhangi bir sorun yok.", "Her hangi bir sorun yok.", "Herhangibir sorun yok.", "Herhangi-bir sorun yok."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Birkaç kişi geldi.", "Bir kaç kişi geldi.", "Bir-kaç kişi geldi.", "Birka ç kişi geldi."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Hiçbiri gelmedi.", "Hiç biri gelmedi.", "Hiç-biri gelmedi.", "Hiçbir i gelmedi."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Öbür gün geliriz.", "Öbürgün geliriz.", "Öbür-gün geliriz.", "Öbürgü n geliriz."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Bugün hava çok güzel.", "Bu gün hava çok güzel.", "Bu-gün hava çok güzel.", "Bugü n hava çok güzel."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Akşamüstü eve döndü.", "Akşam üstü eve döndü.", "Akşam-üstü eve döndü.", "Akşamüst ü eve döndü."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Şüpheli gözaltına alındı.", "Şüpheli göz altına alındı.", "Şüpheli göz-altına alındı.", "Şüpheli gözaltı na alındı."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["İlköğretim okulu burada.", "İlk öğretim okulu burada.", "İlk-öğretim okulu burada.", "İlköğreti m okulu burada."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Hem çalışıyor hem de okuyor.", "Hemçalışıyor hem de okuyor.", "Hem çalışıyor hemde okuyor.", "Hem çalışıyor hem-de okuyor."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Sabahleyin erken kalktı.", "Sabah leyin erken kalktı.", "Sabah-leyin erken kalktı.", "Sabahley in erken kalktı."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Allahaısmarladık, görüşmek üzere.", "Allaha ısmarladık, görüşmek üzere.", "Allah'a ısmarladık, görüşmek üzere.", "Allaha-ısmarladık, görüşmek üzere."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Ali'nin kitabı masada.", "Ali'nin kitab'ı masada.", "Alinin kitabı masada.", "Ali'nin kitabı' masada."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Yarınki toplantı önemli.", "Yarın ki toplantı önemli.", "Yarın-ki toplantı önemli.", "Yarınk i toplantı önemli."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["O da bize katıldı.", "Oda bize katıldı.", "O-da bize katıldı.", "O da bize katıld ı."], dogru: 0 }
   ],
   noktalama: [
     { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Elmayı, armudu, muzu aldım.", "Elmayı armudu, muzu aldım.", "Elmayı, armudu muzu aldım.", "Elmayı armudu muzu, aldım."], dogru: 0 },
@@ -2705,7 +2733,32 @@ const OYUN_SORU_BANKASI = {
     { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Herkes geldi, yalnız Ali gelmedi.", "Herkes geldi yalnız, Ali gelmedi.", "Herkes geldi yalnız Ali gelmedi.", "Herkes, geldi yalnız Ali gelmedi."], dogru: 0 },
     { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Ali ve Veli okula gitti.", "Ali, ve Veli okula gitti.", "Ali ve, Veli okula gitti.", "Ali, ve, Veli okula gitti."], dogru: 0 },
     { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Aman Allah'ım! Neler oluyor?", "Aman Allah'ım, Neler oluyor?", "Aman Allah'ım! neler oluyor?", "Aman Allah'ım. Neler oluyor?"], dogru: 0 },
-    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Ürünün fiyatı 12,5 TL'dir.", "Ürünün fiyatı 12.5 TL'dir.", "Ürünün fiyatı 12'5 TL'dir.", "Ürünün fiyatı 12;5 TL'dir."], dogru: 0 }
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Ürünün fiyatı 12,5 TL'dir.", "Ürünün fiyatı 12.5 TL'dir.", "Ürünün fiyatı 12'5 TL'dir.", "Ürünün fiyatı 12;5 TL'dir."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Kalem, defter ve silgi aldım.", "Kalem defter, ve silgi aldım.", "Kalem, defter, ve silgi aldım.", "Kalem, defter ve, silgi aldım."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["1990-2000 yılları arasında yaşadı.", "1990 - 2000 yılları arasında yaşadı.", "1990- 2000 yılları arasında yaşadı.", "1990 -2000 yılları arasında yaşadı."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Öğrenci velisi ve/veya kendisi imzalayacak.", "Öğrenci velisi ve / veya kendisi imzalayacak.", "Öğrenci velisi ve /veya kendisi imzalayacak.", "Öğrenci velisi ve/ veya kendisi imzalayacak."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Öğretmenimiz, yani sınıf rehberimiz, bize yardım etti.", "Öğretmenimiz yani sınıf rehberimiz, bize yardım etti.", "Öğretmenimiz, yani sınıf rehberimiz bize yardım etti.", "Öğretmenimiz, yani, sınıf rehberimiz, bize yardım etti."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Dr. Ahmet bugün izinli.", "Dr Ahmet bugün izinli.", "D.r. Ahmet bugün izinli.", "Dr. . Ahmet bugün izinli."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Bahçedeki bütün çiçekler, güneşin etkisiyle soldu.", "Bahçedeki bütün çiçekler güneşin etkisiyle, soldu.", "Bahçedeki, bütün çiçekler güneşin etkisiyle soldu.", "Bahçedeki bütün çiçekler güneşin, etkisiyle soldu."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Ey yolcu, durma yürü!", "Ey yolcu durma yürü!", "Ey, yolcu, durma yürü!", "Ey yolcu, durma, yürü!"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Evet, geleceğim.", "Evet geleceğim.", "Evet; geleceğim.", "Evet. geleceğim."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["29.10.1923 tarihinde kuruldu.", "29,10,1923 tarihinde kuruldu.", "29.10.1923. tarihinde kuruldu.", "29 10 1923 tarihinde kuruldu."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Ne kadar güzel bir manzara!", "Ne kadar güzel bir manzara.", "Ne kadar güzel bir manzara!.", "Ne kadar güzel bir manzara,!"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Kar yağıyor, rüzgâr esiyor, hava çok soğuk.", "Kar yağıyor rüzgâr esiyor, hava çok soğuk.", "Kar yağıyor, rüzgâr esiyor hava çok soğuk.", "Kar yağıyor, rüzgâr esiyor, hava, çok soğuk."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Bugün okula gidecek misin?", "Bugün okula gidecek misin??", "Bugün okula gidecek misin?.", "Bugün okula gidecek misin,?"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Çantamda şunlar var: kalem, defter, silgi.", "Çantamda şunlar var, kalem, defter, silgi.", "Çantamda şunlar var; kalem, defter, silgi.", "Çantamda şunlar var kalem, defter, silgi."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Bu kitabı Ahmet değil, Mehmet okudu.", "Bu kitabı Ahmet değil Mehmet okudu.", "Bu kitabı, Ahmet değil, Mehmet okudu.", "Bu kitabı Ahmet, değil Mehmet okudu."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Atatürk (1881-1938) büyük bir liderdir.", "Atatürk, (1881-1938) büyük bir liderdir.", "Atatürk (1881-1938), büyük bir liderdir.", "Atatürk ( 1881-1938 ) büyük bir liderdir."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Bazı meyveler, örneğin elma ve armut, kış aylarında bulunur.", "Bazı meyveler örneğin, elma ve armut, kış aylarında bulunur.", "Bazı meyveler, örneğin elma ve armut kış aylarında bulunur.", "Bazı meyveler, örneğin, elma ve armut, kış aylarında bulunur."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["I. Dünya Savaşı 1914'te başladı.", "I Dünya Savaşı 1914'te başladı.", "I. Dünya Savaşı 1914te başladı.", "I.Dünya Savaşı 1914'te başladı."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Çok yoruldu, hatta bayılacak gibi oldu.", "Çok yoruldu hatta, bayılacak gibi oldu.", "Çok yoruldu hatta bayılacak gibi oldu.", "Çok yoruldu, hatta, bayılacak gibi oldu."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Saat kaçta geleceksin?", "Saat kaçta geleceksin.", "Saat kaçta geleceksin!", "Saat kaçta geleceksin;"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["— Yarın görüşürüz, dedi.", "- Yarın görüşürüz, dedi.", "—Yarın görüşürüz, dedi.", "— Yarın görüşürüz dedi."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Tren saat 14.30'da kalkacak.", "Tren saat 14,30'da kalkacak.", "Tren saat 14.30 da kalkacak.", "Tren saat 14 30'da kalkacak."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Kitap 1.250 sayfadan oluşuyor.", "Kitap 1,250 sayfadan oluşuyor.", "Kitap 1250. sayfadan oluşuyor.", "Kitap 1.250. sayfadan oluşuyor."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Okuldan çıkınca, doğruca eve gitti.", "Okuldan çıkınca doğruca, eve gitti.", "Okuldan, çıkınca doğruca eve gitti.", "Okuldan çıkınca doğruca eve, gitti."], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Vah vah, ne kadar üzücü!", "Vah vah ne kadar üzücü!", "Vah, vah ne kadar üzücü!", "Vah vah, ne kadar üzücü,!"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru yazılmıştır?", secenekler: ["Sevgili dostum, mektubunu aldım.", "Sevgili dostum mektubunu aldım.", "Sevgili, dostum, mektubunu aldım.", "Sevgili dostum, mektubunu, aldım."], dogru: 0 }
   ],
   yazarEser: [
     { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Yaşar Kemal - İnce Memed", "Orhan Kemal - İnce Memed", "Kemal Tahir - İnce Memed", "Fakir Baykurt - İnce Memed"], dogru: 0 },
@@ -2722,7 +2775,32 @@ const OYUN_SORU_BANKASI = {
     { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Necip Fazıl Kısakürek - Çile", "Nazım Hikmet Ran - Çile", "Cahit Sıtkı Tarancı - Çile", "Orhan Veli Kanık - Çile"], dogru: 0 },
     { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Cahit Sıtkı Tarancı - Otuz Beş Yaş", "Necip Fazıl Kısakürek - Otuz Beş Yaş", "Orhan Veli Kanık - Otuz Beş Yaş", "Ahmet Muhip Dıranas - Otuz Beş Yaş"], dogru: 0 },
     { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Ziya Gökalp - Türkçülüğün Esasları", "Ömer Seyfettin - Türkçülüğün Esasları", "Mehmet Emin Yurdakul - Türkçülüğün Esasları", "Yahya Kemal Beyatlı - Türkçülüğün Esasları"], dogru: 0 },
-    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Mehmet Akif Ersoy - Safahat", "Yahya Kemal Beyatlı - Safahat", "Necip Fazıl Kısakürek - Safahat", "Ziya Gökalp - Safahat"], dogru: 0 }
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Mehmet Akif Ersoy - Safahat", "Yahya Kemal Beyatlı - Safahat", "Necip Fazıl Kısakürek - Safahat", "Ziya Gökalp - Safahat"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Namık Kemal - İntibah", "Recaizade Mahmut Ekrem - İntibah", "Ahmet Mithat Efendi - İntibah", "Şemsettin Sami - İntibah"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Recaizade Mahmut Ekrem - Araba Sevdası", "Namık Kemal - Araba Sevdası", "Ahmet Mithat Efendi - Araba Sevdası", "Hüseyin Rahmi Gürpınar - Araba Sevdası"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Ahmet Mithat Efendi - Felatun Bey ile Rakım Efendi", "Namık Kemal - Felatun Bey ile Rakım Efendi", "Şemsettin Sami - Felatun Bey ile Rakım Efendi", "Recaizade Mahmut Ekrem - Felatun Bey ile Rakım Efendi"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Hüseyin Rahmi Gürpınar - Şıpsevdi", "Ahmet Mithat Efendi - Şıpsevdi", "Recaizade Mahmut Ekrem - Şıpsevdi", "Hüseyin Cahit Yalçın - Şıpsevdi"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Halit Ziya Uşaklıgil - Aşk-ı Memnu", "Mehmet Rauf - Aşk-ı Memnu", "Hüseyin Rahmi Gürpınar - Aşk-ı Memnu", "Tevfik Fikret - Aşk-ı Memnu"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Mehmet Rauf - Eylül", "Halit Ziya Uşaklıgil - Eylül", "Tevfik Fikret - Eylül", "Cenap Şahabettin - Eylül"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Tevfik Fikret - Rübab-ı Şikeste", "Cenap Şahabettin - Rübab-ı Şikeste", "Mehmet Rauf - Rübab-ı Şikeste", "Halit Ziya Uşaklıgil - Rübab-ı Şikeste"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Reşat Nuri Güntekin - Yeşil Gece", "Halide Edip Adıvar - Yeşil Gece", "Yakup Kadri Karaosmanoğlu - Yeşil Gece", "Peyami Safa - Yeşil Gece"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Halide Edip Adıvar - Ateşten Gömlek", "Reşat Nuri Güntekin - Ateşten Gömlek", "Yakup Kadri Karaosmanoğlu - Ateşten Gömlek", "Peyami Safa - Ateşten Gömlek"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Yakup Kadri Karaosmanoğlu - Kiralık Konak", "Halide Edip Adıvar - Kiralık Konak", "Reşat Nuri Güntekin - Kiralık Konak", "Refik Halit Karay - Kiralık Konak"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Yahya Kemal Beyatlı - Kendi Gök Kubbemiz", "Ahmet Haşim - Kendi Gök Kubbemiz", "Necip Fazıl Kısakürek - Kendi Gök Kubbemiz", "Cahit Sıtkı Tarancı - Kendi Gök Kubbemiz"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Ahmet Haşim - Göl Saatleri", "Yahya Kemal Beyatlı - Göl Saatleri", "Tevfik Fikret - Göl Saatleri", "Cenap Şahabettin - Göl Saatleri"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Orhan Veli Kanık - Garip", "Oktay Rifat - Garip", "Melih Cevdet Anday - Garip", "Necip Fazıl Kısakürek - Garip"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Ahmet Hamdi Tanpınar - Saatleri Ayarlama Enstitüsü", "Peyami Safa - Saatleri Ayarlama Enstitüsü", "Oğuz Atay - Saatleri Ayarlama Enstitüsü", "Yusuf Atılgan - Saatleri Ayarlama Enstitüsü"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Peyami Safa - Dokuzuncu Hariciye Koğuşu", "Ahmet Hamdi Tanpınar - Dokuzuncu Hariciye Koğuşu", "Reşat Nuri Güntekin - Dokuzuncu Hariciye Koğuşu", "Sabahattin Ali - Dokuzuncu Hariciye Koğuşu"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Sabahattin Ali - Kuyucaklı Yusuf", "Orhan Kemal - Kuyucaklı Yusuf", "Yaşar Kemal - Kuyucaklı Yusuf", "Kemal Tahir - Kuyucaklı Yusuf"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Orhan Kemal - Bereketli Topraklar Üzerinde", "Yaşar Kemal - Bereketli Topraklar Üzerinde", "Kemal Tahir - Bereketli Topraklar Üzerinde", "Fakir Baykurt - Bereketli Topraklar Üzerinde"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Kemal Tahir - Devlet Ana", "Yaşar Kemal - Devlet Ana", "Orhan Kemal - Devlet Ana", "Tarık Buğra - Devlet Ana"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Yaşar Kemal - Ağrı Dağı Efsanesi", "Kemal Tahir - Ağrı Dağı Efsanesi", "Orhan Kemal - Ağrı Dağı Efsanesi", "Sabahattin Ali - Ağrı Dağı Efsanesi"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Aziz Nesin - Zübük", "Rıfat Ilgaz - Zübük", "Muzaffer İzgü - Zübük", "Haldun Taner - Zübük"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Refik Halit Karay - Memleket Hikâyeleri", "Ömer Seyfettin - Memleket Hikâyeleri", "Sait Faik Abasıyanık - Memleket Hikâyeleri", "Memduh Şevket Esendal - Memleket Hikâyeleri"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Memduh Şevket Esendal - Ayaşlı ile Kiracıları", "Refik Halit Karay - Ayaşlı ile Kiracıları", "Sait Faik Abasıyanık - Ayaşlı ile Kiracıları", "Ömer Seyfettin - Ayaşlı ile Kiracıları"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Fakir Baykurt - Yılanların Öcü", "Orhan Kemal - Yılanların Öcü", "Kemal Tahir - Yılanların Öcü", "Yaşar Kemal - Yılanların Öcü"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Orhan Pamuk - Benim Adım Kırmızı", "Elif Şafak - Benim Adım Kırmızı", "Ahmet Hamdi Tanpınar - Benim Adım Kırmızı", "Yaşar Kemal - Benim Adım Kırmızı"], dogru: 0 },
+    { soru: "Aşağıdakilerden hangisi doğru eşleştirilmiştir?", secenekler: ["Elif Şafak - Aşk", "Orhan Pamuk - Aşk", "Ayşe Kulin - Aşk", "Buket Uzuner - Aşk"], dogru: 0 }
   ]
 };
 
@@ -2732,9 +2810,23 @@ const OYUN_TUR_BILGI = {
   yazarEser: { ad: 'Yazar - Eser Eşleştirme', emoji: '📚' }
 };
 
+const OYUN_RAUND_SORU_SAYISI = 20;
+
+// Tür seçildiğinde doğrudan oyunu başlatmak yerine önce "hazır mısın" ekranını açar.
+function oyunTurSec(tur) {
+  oyunUI = { ekran: 'hazir', tur, sorular: [], index: 0, dogru: 0, secim: null, cevaplandi: false };
+  oyunRerender();
+}
+
+// Yeşil "Oyuna Başla" tuşuna basılınca ilgili konu havuzundan rastgele 20 soru seçilip oyun başlatılır.
+function oyunOyunaBasla() {
+  oyunBaslat(oyunUI.tur);
+}
+
 function oyunBaslat(tur) {
   const bank = OYUN_SORU_BANKASI[tur] || [];
-  const sorular = oyunKaristir(bank).map(q => {
+  const secilenSorular = oyunKaristir(bank).slice(0, Math.min(OYUN_RAUND_SORU_SAYISI, bank.length));
+  const sorular = secilenSorular.map(q => {
     const dogruMetin = q.secenekler[q.dogru];
     const secenekler = oyunKaristir(q.secenekler);
     const dogru = secenekler.indexOf(dogruMetin);
@@ -2752,6 +2844,26 @@ function oyunCevapSec(i) {
   if (i === soru.dogru) oyunUI.dogru++;
   oyunRerender();
 }
+function oyunSkorKaydet() {
+  try {
+    if (!state.oyunSkorlari) state.oyunSkorlari = [];
+    const t = OYUN_TUR_BILGI[oyunUI.tur] || {};
+    state.oyunSkorlari.push({
+      tur: oyunUI.tur,
+      turAd: t.ad || oyunUI.tur,
+      puan: oyunUI.dogru * 5,
+      dogru: oyunUI.dogru,
+      toplam: oyunUI.sorular.length,
+      ts: Date.now()
+    });
+    saveState();
+  } catch (e) {}
+}
+function oyunEnYuksekSkorlar(limit) {
+  const liste = (state && state.oyunSkorlari) ? state.oyunSkorlari.slice() : [];
+  liste.sort((a, b) => (b.puan || 0) - (a.puan || 0));
+  return liste.slice(0, limit || 5);
+}
 function oyunSonrakiSoru() {
   if (oyunUI.index + 1 < oyunUI.sorular.length) {
     oyunUI.index++;
@@ -2759,6 +2871,7 @@ function oyunSonrakiSoru() {
     oyunUI.cevaplandi = false;
   } else {
     oyunUI.ekran = 'sonuc';
+    oyunSkorKaydet();
   }
   oyunRerender();
 }
@@ -2779,19 +2892,47 @@ function renderEgitselOyunlar(el) {
   if (oyunUI.ekran === 'hangisiDogru') {
     const turTusu = (tur) => {
       const t = OYUN_TUR_BILGI[tur];
-      const soruSayisi = (OYUN_SORU_BANKASI[tur] || []).length;
       return `
-        <div onclick="oyunBaslat('${tur}')" style="cursor:pointer;display:flex;align-items:center;gap:12px;background:rgba(255,253,247,0.9);border:1px solid rgba(180,140,60,0.3);border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 3px 10px rgba(120,90,30,0.1);">
+        <div onclick="oyunTurSec('${tur}')" style="cursor:pointer;display:flex;align-items:center;gap:12px;background:rgba(255,253,247,0.9);border:1px solid rgba(180,140,60,0.3);border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 3px 10px rgba(120,90,30,0.1);">
           <div style="font-size:1.8rem;">${t.emoji}</div>
           <div style="flex:1;">
             <div style="font-weight:800;font-size:0.92rem;color:#3a2a15;">${t.ad}</div>
-            <div style="font-size:0.74rem;color:#6b5636;margin-top:2px;">${soruSayisi} soru</div>
           </div>
           <div style="color:#b8903f;font-size:1.2rem;">›</div>
         </div>`;
     };
-    const ic = turTusu('yazim') + turTusu('noktalama') + turTusu('yazarEser');
+    const skorlar = oyunEnYuksekSkorlar(5);
+    const skorHtml = skorlar.length ? skorlar.map((s, i) => {
+      const t = OYUN_TUR_BILGI[s.tur] || {};
+      return `
+        <div style="display:flex;align-items:center;gap:10px;background:rgba(255,253,247,0.9);border:1px solid rgba(180,140,60,0.25);border-radius:12px;padding:10px 14px;margin-bottom:6px;">
+          <div style="font-weight:900;color:#b8903f;width:20px;">${i + 1}.</div>
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:0.84rem;color:#3a2a15;">${t.emoji || ''} ${s.turAd || t.ad || s.tur}</div>
+            <div style="font-size:0.7rem;color:#6b5636;">${s.dogru}/${s.toplam} doğru</div>
+          </div>
+          <div style="font-weight:900;font-size:1.05rem;color:#166534;">${s.puan} p</div>
+        </div>`;
+    }).join('') : `<div style="text-align:center;padding:14px;color:#8a7a5c;font-size:0.82rem;">Henüz oyun oynanmadı. İlk skoru sen koy! 🏆</div>`;
+    const ic = turTusu('yazim') + turTusu('noktalama') + turTusu('yazarEser') + `
+      <div style="margin-top:16px;padding-top:14px;border-top:1px dashed rgba(180,140,60,0.35);">
+        <div style="font-weight:900;font-size:0.98rem;color:#3a2a15;margin-bottom:10px;">🏆 Oyun Skorları</div>
+        ${skorHtml}
+      </div>`;
     el.innerHTML = wrapAc(ic, '🤔 Hangisi Doğru?', 'oyunAnaEkraniAc()');
+    return;
+  }
+
+  if (oyunUI.ekran === 'hazir') {
+    const t = OYUN_TUR_BILGI[oyunUI.tur];
+    const ic = `
+      <div style="text-align:center;padding:14px 6px;">
+        <div style="font-size:2.6rem;margin-bottom:10px;">${t.emoji}</div>
+        <div style="font-weight:900;font-size:1.1rem;color:#3a2a15;margin-bottom:8px;">${t.ad}</div>
+        <div style="font-size:0.85rem;color:#6b5636;margin-bottom:22px;line-height:1.5;">Bu oyunda ${OYUN_RAUND_SORU_SAYISI} soruluk rastgele bir tur seni bekliyor. Doğru bildiğinde yeşil, yanlış bildiğinde kırmızı renkte göreceksin. Hazır olduğunda başla!</div>
+        <button onclick="oyunOyunaBasla()" style="width:100%;padding:15px;border:none;border-radius:14px;background:linear-gradient(135deg,#16a34a,#4ade80);color:#06280f;font-weight:900;font-size:0.95rem;cursor:pointer;box-shadow:0 4px 12px rgba(22,163,74,0.3);">🟢 Oyuna Başla</button>
+      </div>`;
+    el.innerHTML = wrapAc(ic, t.emoji + ' ' + t.ad, 'oyunHangisiDogruAc()');
     return;
   }
 
@@ -2822,6 +2963,7 @@ function renderEgitselOyunlar(el) {
   if (oyunUI.ekran === 'sonuc') {
     const t = OYUN_TUR_BILGI[oyunUI.tur];
     const toplam = oyunUI.sorular.length;
+    const puan = oyunUI.dogru * 5;
     const basari = toplam ? Math.round(oyunUI.dogru / toplam * 100) : 0;
     const renk = basari >= 75 ? '#166534' : basari >= 50 ? '#8a6a2f' : '#b91c1c';
     const mesaj = basari >= 90 ? 'Harika! Neredeyse hiç hata yapmadın. 🌟' : basari >= 75 ? 'Çok iyi gidiyorsun! 👏' : basari >= 50 ? 'Fena değil, tekrar dene ve daha da yüksel! 💪' : 'Biraz daha çalışmak iyi olur, pes etme! 📚';
@@ -2829,7 +2971,8 @@ function renderEgitselOyunlar(el) {
       <div style="text-align:center;padding:20px 10px;">
         <div style="font-size:2.4rem;margin-bottom:10px;">${t.emoji}</div>
         <div style="font-size:2rem;font-weight:900;color:${renk};margin-bottom:6px;">${oyunUI.dogru}/${toplam}</div>
-        <div style="font-size:0.95rem;font-weight:700;color:${renk};margin-bottom:14px;">%${basari} başarı</div>
+        <div style="font-size:0.95rem;font-weight:700;color:${renk};margin-bottom:12px;">%${basari} başarı</div>
+        <div style="display:inline-block;background:linear-gradient(135deg,#8a6a2f,#d4af5a);color:#241c0e;font-weight:900;font-size:1.15rem;padding:10px 24px;border-radius:14px;margin-bottom:14px;box-shadow:0 4px 12px rgba(138,106,47,0.3);">🏆 Puan: ${puan}</div>
         <div style="font-size:0.85rem;color:#6b5636;margin-bottom:22px;">${mesaj}</div>
         <button onclick="oyunTekrarOyna()" style="width:100%;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#8a6a2f,#d4af5a);color:#241c0e;font-weight:800;font-size:0.9rem;cursor:pointer;margin-bottom:8px;">🔁 Tekrar Oyna</button>
         <button onclick="oyunHangisiDogruAc()" style="width:100%;padding:13px;border:1px solid rgba(180,140,60,0.4);border-radius:12px;background:#fdfaf1;color:#3a2a15;font-weight:700;font-size:0.86rem;cursor:pointer;">◀ Diğer Oyunlar</button>
