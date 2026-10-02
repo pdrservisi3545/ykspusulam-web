@@ -114,7 +114,7 @@ let state = {
   kavanoz: { fotograflar: [], sorular: [] }, // Soru Kavanozu: fotograflar=[{id,dataUrl,tarih}], sorular=[{soruId,tarih}]
   bildirimler: [], // Rehber öğretmenden gelen bildirimler: [{mesaj, tarih, okundu, gonderen}]
   sb: { secilenKonu: 'Tümü', seviye: null, filtre: 'Tümü', cevaplar: {}, cevapTs: {}, reveal: {}, sureler: {}, incelemeModu: false, incelemeAcik: {} }, // Soru Bankası cevapları — kalıcı ve kullanıcıya özel olması için state içinde tutulur
-  vg: {}, // Veri Girişi / Denemelerim / Branş Denemelerim kutuları (vgkz_/vgd_/vgbd_/vgkbitti_ vb.) — kişiye özel
+  vg: {}, // Veri Girişi (vgkz_/vgd_/vgbd_/vgkbitti_ vb.) ve Denemelerim (vgud_) kutuları — kişiye özel
   oyunSkorlari: [] // Eğitsel Oyunlar skor geçmişi: [{tur, turAd, puan, dogru, toplam, ts}]
 };
 
@@ -132,7 +132,7 @@ function sbVarsayilanState() {
 //  sarmalayıcıdan olduğu gibi geçer — davranışları değişmez.
 // ============================================================
 function vgIsPerStudentKey(key) {
-  return typeof key === 'string' && /^(vgkz_|vgd_|vgbd_|vgkbitti_|vgbdbitti_|vgk_)/.test(key);
+  return typeof key === 'string' && /^(vgkz_|vgd_|vgud_|vgbd_|vgkbitti_|vgbdbitti_|vgk_)/.test(key);
 }
 // Bir öğrencinin state.vg'sinden ('vgkz_...' gibi) tek bir kaydı okur (öğretmen/veli görünümü için).
 function vgSGetir(s, key) {
@@ -179,6 +179,44 @@ function vgRemoveItem(key) {
     return;
   }
   try { localStorage.removeItem(key); } catch(e){}
+}
+
+// ── Veri Girişi denemeleri ile Denemelerim (uygulama içi denemeler) AYRI kutularda tutulur ──
+// vgd_<SINAV>_<no>_<ders>  : Veri Girişi > Denemeler (uygulama DIŞINDA çözülen denemelerin elle girilen sonuçları)
+// vgud_<SINAV>_<no>_<ders> : Denemelerim (uygulamanın İÇİNDE çözülen denemelerin sonuçları)
+// HATA (düzeltildi): Eskiden Denemelerim de sonuçlarını vgd_ anahtarlarına yazıyordu; bu yüzden Veri Girişi'ne
+// "1. Deneme" girilince Denemelerim'deki 1. deneme "Tamamlandı" görünüp o sonuçları gösteriyor, uygulamada
+// 1. deneme çözülünce de Veri Girişi'ndeki 1. denemenin üzerine yazılıyordu.
+// Göç: Eski sürümde Denemelerim'in vgd_ altına yazdığı kayıtlar ayırt edilebilir — Denemelerim D/Y/B'yi SAYI
+// olarak (12), Veri Girişi ise input'tan gelen METİN olarak ("12") kaydeder. Sayı içeren vgd_ kayıtları vgud_'ye
+// taşınır. Her açılışta çalışır (eski sürümün yüklü olduğu başka bir cihaz tekrar vgd_'ye yazsa bile ayrılır),
+// taşınacak kayıt yoksa hiçbir şey yazmaz.
+function vgUygulamaDenemeKayitlariniAyir() {
+  if (!state) return 0;
+  if (!state.vg) state.vg = {};
+  const desen = /^vgd_(TYT|AYT|YDT)_(\d+)_([A-Za-z0-9]+)$/;
+  const anahtarlar = new Set(Object.keys(state.vg).filter(k => desen.test(k)));
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && desen.test(k)) anahtarlar.add(k);
+    }
+  } catch(e){}
+  let tasinan = 0;
+  anahtarlar.forEach(k => {
+    let ham = null, o = null;
+    try { ham = Object.prototype.hasOwnProperty.call(state.vg, k) ? state.vg[k] : localStorage.getItem(k); o = JSON.parse(ham || 'null'); } catch(e){ return; }
+    if (!o || typeof o.d !== 'number' || typeof o.y !== 'number' || typeof o.b !== 'number') return;
+    const yeni = 'vgud_' + k.slice(4);
+    let mevcut = null;
+    try { mevcut = JSON.parse(state.vg[yeni] || 'null'); } catch(e){}
+    if (!mevcut || (+o.ts || 0) > (+mevcut.ts || 0)) state.vg[yeni] = ham;
+    delete state.vg[k];
+    try { localStorage.removeItem(k); } catch(e){}
+    tasinan++;
+  });
+  if (tasinan) { try { saveState(); } catch(e){} }
+  return tasinan;
 }
 
 const NUM_TEST = 15;
@@ -2052,6 +2090,7 @@ function startApp() {
 }
 
 function showApp() {
+  try { vgUygulamaDenemeKayitlariniAyir(); } catch(e){}
   document.getElementById('mainApp').classList.add('active');
   document.getElementById('topName').textContent = state.student.name;
   buildNav();
@@ -2980,13 +3019,17 @@ const OYUN_TUR_BILGI = {
   noktalama: { ad: 'Noktalama İşaretleri', emoji: '❓', grup: 'dogru' },
   yazarEser: { ad: 'Yazar-Eser', emoji: '📚', grup: 'yanlis', soru: 'Aşağıdaki yazar-eser eşleştirmelerinden hangisi yanlıştır?' },
   geometriFormul: { ad: 'Geometri Formül Avı', emoji: '📐', grup: 'yanlis', soru: 'Aşağıdaki formüllerden hangisi yanlıştır?' },
-  sozcukteAnlam: { ad: 'Sözcükte Anlam', emoji: '🔤', grup: 'eslestirme', tip: 'eslestirme' }
+  // talimat: oyun ekranındaki kısa yönerge; tanitim: "hazır" ekranında soldaki/sağdaki içeriğin tarifi
+  sozcukteAnlam: { ad: 'Sözcükte Anlam', emoji: '🔤', grup: 'eslestirme', tip: 'eslestirme', tanitim: 'solda 4 sözcük, sağda ise karışık sırada anlamları', talimat: 'Önce soldaki sözcüğe, sonra sağdaki anlamına dokun.', birim: 'sözcük' },
+  deyimAnlam: { ad: 'Deyim - Anlam', emoji: '💬', grup: 'eslestirme', tip: 'eslestirme', tanitim: 'solda 4 deyim, sağda ise karışık sırada anlamları', talimat: 'Önce soldaki deyime, sonra sağdaki anlamına dokun.', birim: 'deyim' },
+  edebiAkim: { ad: 'Edebi Akım - Sanatçı', emoji: '🖋️', grup: 'eslestirme', tip: 'eslestirme', tanitim: 'solda 4 sanatçı, sağda ise karışık sırada bağlı oldukları edebi akımlar', talimat: 'Önce soldaki sanatçıya, sonra sağdaki akımına dokun.', birim: 'sanatçı' },
+  tarihOlay: { ad: 'Tarih: Olay - Yıl - Sonuç', emoji: '🏛️', grup: 'eslestirme', tip: 'eslestirme', tanitim: 'solda 4 tarihî olay, sağda ise karışık sırada yılları ve sonuçları', talimat: 'Önce soldaki olaya, sonra sağdaki yıl ve sonucuna dokun.', birim: 'olay' }
 };
 
 const OYUN_GRUP_BILGI = {
   dogru: { ekran: 'hangisiDogru', baslik: 'Hangisi Doğru?', emoji: '🤔', aciklama: 'Yazım kuralları ve noktalama işaretleri oyunları', turler: ['yazim', 'noktalama'] },
   yanlis: { ekran: 'hangisiYanlis', baslik: 'Hangisi Yanlış?', emoji: '🧐', aciklama: 'Yanlışı bul, doğruları öğren: yazar-eser ve geometri formül avı', turler: ['yazarEser', 'geometriFormul'] },
-  eslestirme: { ekran: 'eslestirmeBolum', baslik: 'Eşleştirme', emoji: '🔗', aciklama: 'Sözcükleri anlamlarıyla eşleştir: sözcükte anlam', turler: ['sozcukteAnlam'] }
+  eslestirme: { ekran: 'eslestirmeBolum', baslik: 'Eşleştirme', emoji: '🔗', aciklama: 'Sözcükte anlam, deyimler, edebi akımlar ve tarih eşleştirmeleri', turler: ['sozcukteAnlam', 'deyimAnlam', 'edebiAkim', 'tarihOlay'] }
 };
 
 const OYUN_RAUND_SORU_SAYISI = 20;
@@ -3031,6 +3074,81 @@ const OYUN_ESLESTIRME_SETLERI = {
     [["kibirli", "Kendini başkalarından üstün gören"], ["ateşten gömlek", "Acı veren, dayanılmaz, sıkıntılı durum"], ["sağaltıcı", "İyileştirici, tedavi edici"], ["hâlihazırda", "Şu anda"]],
     [["göğüs germek", "Bir güçlüğe karşı koymak, dayanmak"], ["tiryaki", "Bir şeye aşırı düşkün, alışmış kimse"], ["aleni", "Herkesin gözü önünde olan, gizli olmayan"], ["israf", "Gereksiz yere harcama, savurganlık"]],
     [["yüzeysel", "Konunun derinliğine inmeyen"], ["el ele vermek", "Birlikte çalışmak"], ["helal süt emmiş", "Güvenilir, dürüst"], ["baş eğmek", "Boyun eğmek, teslim olmak"]]
+  ],
+  // Deyim - Anlam: 100 deyim / 25 set. Her deyim sozluk.gov.tr'de birebir madde olarak doğrulandı, anlamlar TDK tanımından. Anlamca yakın deyimler (ör. burnundan solumak / küplere binmek) aynı sete konmadı.
+  deyimAnlam: [
+    [["ipe un sermek", "Geçersiz nedenler ileri sürerek istenen işi yapmaktan kaçınmak"], ["akla karayı seçmek", "Bir işi başarıncaya değin çok sıkıntı çekmek"], ["burnundan solumak", "Çok öfkelenmiş olmak"], ["vız gelmek", "Pek önemsiz görünmek"]],
+    [["ağırdan almak", "Bir işi gönülsüz, isteksiz yapmak; geciktirmek"], ["burnu havada", "Kibirli, kendini beğenmiş"], ["zıvanadan çıkmak", "Aklını yitirmek, çılgın gibi davranmak"], ["göze almak", "Gelebilecek her türlü zararı ve tehlikeyi önceden kabul etmek"]],
+    [["bel bağlamak", "Birinin kendisine yardımcı olacağına inanmak, güvenmek"], ["sırtını yere getirmek", "Üstün gelmek, yenmek"], ["taş kesilmek", "Çok şaşırıp ne yapacağını, ne söyleyeceğini bilememek"], ["yerinde saymak", "İlerleyememek, gelişememek"]],
+    [["abayı yakmak", "Birine aşırı biçimde gönül vermek, âşık olmak"], ["kulak kabartmak", "Belli etmemeye çalışarak dinlemek"], ["kılı kırk yarmak", "Titiz ve ayrıntılı bir biçimde incelemek"], ["ipliği pazara çıkmak", "Kötü nitelik ve suçları ortaya çıkmak"]],
+    [["dört dönmek", "Telaş içinde çare aramak"], ["gönül koymak", "Gücenmek, darılmak"], ["ayak diremek", "Bir düşünceyi sonuna kadar sürdürmek, tutumundan şaşmamak"], ["ağır basmak", "Bir işte gücü ve etkisi üstün gelmek"]],
+    [["çenesi düşmek", "Yerli yersiz konuşup gevezelik etmek"], ["devede kulak", "Bir bütüne göre önemsiz sayılacak kadar az"], ["kafasına dank etmek", "Bir olay sebebiyle birden ayılmak, doğruyu anlamak"], ["göz atmak", "Kısa bir süre, fazla dikkat etmeden bakıvermek"]],
+    [["yüzü kızarmak", "Utanmak"], ["deveye hendek atlatmak", "Birine yapılması neredeyse imkânsız bir işi yaptırabilmek"], ["göz boyamak", "Gösterişle aldatmak, yanıltmak"], ["göze girmek", "Davranış ve yetenekleriyle ilgi ve önem kazanmak"]],
+    [["kulağı delik", "Olup bitenleri çabuk haber alan"], ["kara çalmak", "Birine iftira etmek"], ["üstüne alınmak", "Bir davranışın kendisine karşı olduğunu sanarak alınmak"], ["ateş pahası", "Çok pahalı"]],
+    [["içine doğmak", "Bir şeyin olacağını hiçbir belirtiye dayanmadan önceden sezmek"], ["ağzında bakla ıslanmamak", "Sır saklamamak"], ["dilinde tüy bitmek", "Tekrar tekrar söylemekten usanmak"], ["eli çabuk", "Çabuk iş gören, hamarat"]],
+    [["fincancı katırlarını ürkütmek", "Zararı dokunabilecek birinin hoşuna gitmeyen bir davranışta bulunmak"], ["göz yummak", "Görmezlikten gelmek, hoş görmek"], ["dikiş tutturamamak", "Bir işte veya bir yerde uzun süre kalamamak"], ["yüreği yağ bağlamak", "İstenen bir şeyin olmasından ferahlık duymak"]],
+    [["zılgıt yemek", "Azar işitmek"], ["sözünde durmak", "Verdiği sözü yerine getirmek"], ["baş göz etmek", "Evlendirmek"], ["yaka silkmek", "Bıkmak, usanmak"]],
+    [["yüzüne gözüne bulaştırmak", "Bir işi becerememek, bozmak"], ["hapı yutmak", "Kötü bir duruma düşmek"], ["gözü kara", "Korkusuz"], ["küplere binmek", "Çok öfkelenmek"]],
+    [["ağzı süt kokmak", "Çok genç ve toy olmak"], ["ağzı kulaklarına varmak", "Çok sevinmek"], ["ağız birliği etmek", "Bir konuda anlaşarak aynı biçimde konuşmak"], ["kafa yormak", "Bir konu üzerinde çokça düşünmek"]],
+    [["şapa oturmak", "İçinden çıkılması güç bir duruma düşmek"], ["pireyi deve yapmak", "Önemsiz bir olayı büyütmek"], ["içi içine sığmamak", "Telaş, sabırsızlık, coşkunluk göstermekten kendini alamamak"], ["saman altından su yürütmek", "Belli etmeden iş çevirmek"]],
+    [["bir çuval inciri berbat etmek", "Düzelmekte olan bir durumu yersiz davranışlarla bozmak"], ["yan çizmek", "Bir işten kaçmak"], ["ateşle oynamak", "Pek tehlikeli bir işle uğraşmak"], ["ne şiş yansın ne kebap", "İki taraf da gücendirilmesin, korunsun"]],
+    [["çileden çıkmak", "Sabrı ve dayanıklılığı kalmayıp taşkınlık göstermek"], ["haddini bilmek", "Konumuna, durumuna uygun davranmak"], ["kaşla göz arasında", "Kimsenin sezemeyeceği kadar kısa bir zamanda, çok çabuk"], ["kolları sıvamak", "Bir iş yapmaya istekle hazırlanmak"]],
+    [["baltayı taşa vurmak", "Farkında olmadan birine dokunacak söz söylemek, pot kırmak"], ["içi kan ağlamak", "Çok üzüntü duymak"], ["burun kıvırmak", "Önem vermemek, küçümsemek, beğenmemek"], ["tüyleri diken diken olmak", "Üşümekten veya korkmaktan tüyleri kabarmak"]],
+    [["kuyusunu kazmak", "Birinin yıkımına çalışmak"], ["çantada keklik", "Ele geçirilmesi, elde edilmesi kolay olan"], ["el etek öpmek", "Bir işi yaptırmak için çok yalvarmak"], ["gözü yüksekte", "Bulunduğu durumdan çok üstün bir duruma ulaşmayı amaçlayan"]],
+    [["nabzına göre şerbet vermek", "Birinin hoşuna gidecek, gururunu okşayacak yolda davranmak"], ["hesaba katmak", "Dikkate almak, göz önünde bulundurmak"], ["eli uzun", "Fırsat buldukça öteberi aşıran"], ["ağzı sıkı", "Sır saklayan, ketum"]],
+    [["can atmak", "Şiddetle arzu etmek, çok istemek"], ["sinek avlamak", "Müşterisi olmayıp boş oturmak"], ["ayağını denk almak", "Kötülüklere karşı uyanık davranmak, dikkat etmek"], ["eli kulağında", "Neredeyse olacak, çok yakında olması beklenen"]],
+    [["kulak misafiri olmak", "Yanında konuşulanları istemeden dinlemek"], ["gözden çıkarmak", "Bir şeyin elden çıkmasını kabul etmek"], ["akıl almamak", "İnanılacak gibi olmamak, akla uygun gelmemek"], ["kabak tadı vermek", "Aşırı tekrarlanarak bıktırmak"]],
+    [["aklına esmek", "Düşünmediği bir şeyi birden yapmaya karar vermek"], ["dili dolaşmak", "Heyecan, korku gibi sebeplerle şaşırarak söyleyeceğini karıştırmak"], ["kendini dev aynasında görmek", "Kendini olduğundan çok üstün görmek"], ["ayak uydurmak", "Davranışını başkasının davranışına benzetmek"]],
+    [["ağzı var dili yok", "Pek sessiz, kendi hâlinde"], ["keyfi kaçmak", "Neşesi kalmamak"], ["gün yüzü görmemek", "Hiç kullanılmamak, yeni kalmak"], ["elinden tutmak", "Yardım etmek"]],
+    [["pabucu dama atılmak", "Kendinden üstün birinin çıkmasıyla gözden düşmek"], ["yağmurdan kaçarken doluya tutulmak", "Güç bir durumdan kurtulayım derken daha kötüsüyle karşılaşmak"], ["gözü tok", "Paraya, mala düşkünlük göstermeyen"], ["aklı başına gelmek", "Davranışlarının yanlışlığını sezerek doğru yolu bulmak"]],
+    [["kafa tutmak", "Boyun eğmemek, karşı gelmek, diklenmek"], ["gözü tutmak", "Güvenmek, beğenmek"], ["el altından", "Gizlice"], ["tuzu kuru", "Bir işten zarar görmeyen, kazancı yolunda olan"]]
+  ],
+  // Edebi Akım - Sanatçı: 64 sanatçı / 16 set; her sette 4 FARKLI akım. Birden çok akımla anılan sanatçılar (Halit Ziya-natüralizm, Maupassant-realizm, Baudelaire-parnasizm, Yahya Kemal-klasisizm, Breton/Éluard/Aragon-dadaizm vb.) o akımla aynı sete konmadı.
+  edebiAkim: [
+    [["Théophile Gautier", "Parnasizm"], ["Stéphane Mallarmé", "Sembolizm (Simgecilik)"], ["Stendhal", "Realizm (Gerçekçilik)"], ["Victor Hugo", "Romantizm (Coşumculuk)"]],
+    [["Leconte de Lisle", "Parnasizm"], ["Orhan Pamuk", "Postmodernizm"], ["Yusuf Atılgan", "Egzistansiyalizm (Varoluşçuluk)"], ["Lord Byron", "Romantizm (Coşumculuk)"]],
+    [["Goncourt Kardeşler", "Natüralizm (Doğalcılık)"], ["Ferit Edgü", "Egzistansiyalizm (Varoluşçuluk)"], ["İhsan Oktay Anar", "Postmodernizm"], ["Recaizade Mahmut Ekrem", "Romantizm (Coşumculuk)"]],
+    [["Yahya Kemal Beyatlı", "Parnasizm"], ["Namık Kemal", "Romantizm (Coşumculuk)"], ["Dostoyevski", "Realizm (Gerçekçilik)"], ["Paul Éluard", "Sürrealizm (Gerçeküstücülük)"]],
+    [["Paul Verlaine", "Sembolizm (Simgecilik)"], ["Racine", "Klasisizm (Kuralcılık)"], ["Azra Erhat", "Hümanizm (İnsancılık)"], ["Balzac", "Realizm (Gerçekçilik)"]],
+    [["Montaigne", "Hümanizm (İnsancılık)"], ["Gogol", "Realizm (Gerçekçilik)"], ["Demir Özlü", "Egzistansiyalizm (Varoluşçuluk)"], ["Nâzım Hikmet", "Fütürizm (Gelecekçilik)"]],
+    [["Émile Zola", "Natüralizm (Doğalcılık)"], ["Simone de Beauvoir", "Egzistansiyalizm (Varoluşçuluk)"], ["Molière", "Klasisizm (Kuralcılık)"], ["Ahmet Haşim", "Sembolizm (Simgecilik)"]],
+    [["Marinetti", "Fütürizm (Gelecekçilik)"], ["Turgenyev", "Realizm (Gerçekçilik)"], ["Lamartine", "Romantizm (Coşumculuk)"], ["Tevfik Fikret", "Parnasizm"]],
+    [["Beşir Fuad", "Natüralizm (Doğalcılık)"], ["Şinasi", "Klasisizm (Kuralcılık)"], ["Cenap Şahabettin", "Sembolizm (Simgecilik)"], ["Halikarnas Balıkçısı", "Hümanizm (İnsancılık)"]],
+    [["La Fontaine", "Klasisizm (Kuralcılık)"], ["Mayakovski", "Fütürizm (Gelecekçilik)"], ["Halit Ziya Uşaklıgil", "Realizm (Gerçekçilik)"], ["Jean-Paul Sartre", "Egzistansiyalizm (Varoluşçuluk)"]],
+    [["Abdülhak Hamit Tarhan", "Romantizm (Coşumculuk)"], ["Rabelais", "Hümanizm (İnsancılık)"], ["Flaubert", "Realizm (Gerçekçilik)"], ["Albert Camus", "Egzistansiyalizm (Varoluşçuluk)"]],
+    [["Bilge Karasu", "Postmodernizm"], ["Guy de Maupassant", "Natüralizm (Doğalcılık)"], ["Louis Aragon", "Sürrealizm (Gerçeküstücülük)"], ["Boileau", "Klasisizm (Kuralcılık)"]],
+    [["Corneille", "Klasisizm (Kuralcılık)"], ["Umberto Eco", "Postmodernizm"], ["Baudelaire", "Sembolizm (Simgecilik)"], ["Alfred de Musset", "Romantizm (Coşumculuk)"]],
+    [["André Breton", "Sürrealizm (Gerçeküstücülük)"], ["Nabizade Nazım", "Natüralizm (Doğalcılık)"], ["José Maria de Heredia", "Parnasizm"], ["Chateaubriand", "Romantizm (Coşumculuk)"]],
+    [["Sabahattin Eyüboğlu", "Hümanizm (İnsancılık)"], ["Tolstoy", "Realizm (Gerçekçilik)"], ["Tristan Tzara", "Dadaizm"], ["Sully Prudhomme", "Parnasizm"]],
+    [["Arthur Rimbaud", "Sembolizm (Simgecilik)"], ["Charles Dickens", "Realizm (Gerçekçilik)"], ["Erasmus", "Hümanizm (İnsancılık)"], ["Hasan Ali Toptaş", "Postmodernizm"]]
+  ],
+  // Tarih: Olay - Yıl - Sonuç: 100 olay / 25 set (sağ sütun: yıl · sonuç). Aynı yıldaki ya da sonucu benzeyen olaylar aynı sete konmadı.
+  tarihOlay: [
+    [["Çaldıran Savaşı", "1514 · Doğu Anadolu'da Safevi tehlikesi büyük ölçüde önlendi"], ["Kadeş Antlaşması", "MÖ 1280 · Bilinen ilk yazılı antlaşma imzalandı"], ["Koyunhisar (Bafeus) Savaşı", "1302 · Osmanlılar Bizans'a karşı ilk zaferini kazandı"], ["Pasarofça Antlaşması", "1718 · Lale Devri başladı"]],
+    [["Malazgirt Meydan Savaşı", "1071 · Anadolu'nun kapıları Türklere açıldı"], ["Kütahya-Eskişehir Savaşları", "1921 · Başkomutanlık Kanunu çıkarıldı"], ["Kavimler Göçü", "375 · Avrupa'nın etnik yapısı değişti"], ["Belgrad Antlaşması", "1739 · Osmanlı'nın Batı'ya karşı kazançlı çıktığı son antlaşma imzalandı"]],
+    [["Kösedağ Savaşı", "1243 · Anadolu Selçuklu Devleti Moğol egemenliğine girdi"], ["Takrir-i Sükûn Kanunu", "1925 · Şeyh Said İsyanı üzerine olağanüstü yetkiler veren kanun çıkarıldı"], ["II. Meşrutiyet'in ilanı", "1908 · Kanun-ı Esasi yeniden yürürlüğe girdi"], ["Kut'ül Amare Zaferi", "1916 · Irak cephesinde İngiliz ordusu teslim alındı"]],
+    [["Pasinler Savaşı", "1048 · Türkler ile Bizans arasındaki ilk savaşı Türkler kazandı"], ["II. İnönü Savaşı", "1921 · Mustafa Kemal \"Milletin makus talihini de yendiniz.\" dedi"], ["Patrona Halil İsyanı", "1730 · Lale Devri sona erdi"], ["Magna Carta", "1215 · İngiltere'de kralın yetkileri ilk kez sınırlandırıldı"]],
+    [["Hünkâr İskelesi Antlaşması", "1833 · Boğazlar ilk kez uluslararası bir sorun hâline geldi"], ["Tanzimat Fermanı", "1839 · Hukukun üstünlüğü ilkesi kabul edildi"], ["Kasr-ı Şirin Antlaşması", "1639 · Bugünkü Türkiye-İran sınırı büyük ölçüde çizildi"], ["Halifeliğin kaldırılması", "1924 · Laik devlet yapısına geçişte önemli bir adım atıldı"]],
+    [["Bursa'nın fethi", "1326 · Bursa Osmanlı'nın başkenti oldu"], ["Yaş Antlaşması", "1792 · Kırım'ın Rusya'ya ait olduğu kabul edildi"], ["Kabotaj Kanunu", "1926 · Karasularında taşımacılık hakkı yalnızca Türk vatandaşlarına verildi"], ["Havza Genelgesi", "1919 · Halk, işgalleri mitinglerle protesto etmeye çağrıldı"]],
+    [["Teşvik-i Sanayi Kanunu", "1927 · Özel sektörün sanayi yatırımları teşvik edildi"], ["Şapka Kanunu", "1925 · Kılık kıyafette çağdaşlaşma sağlandı"], ["Mustafa Kemal'in Samsun'a çıkışı", "1919 · Millî Mücadele başladı"], ["Haçova Meydan Savaşı", "1596 · Osmanlı ordusu Haçlı ordusunu meydan savaşında yendi"]],
+    [["Türk Dil Kurumu'nun kurulması", "1932 · Türkçenin özleşmesi ve gelişmesi amaçlandı"], ["Erzurum Kongresi", "1919 · Manda ve himaye ilk kez reddedildi"], ["Miryokefalon Savaşı", "1176 · Anadolu'nun Türk yurdu olduğu kesinleşti"], ["Saltanatın kaldırılması", "1922 · Osmanlı Devleti hukuken sona erdi"]],
+    [["Tercüman-ı Ahval'in yayımlanması", "1860 · İlk özel Türk gazetesi çıktı"], ["Talas Savaşı", "751 · Türklerin İslamiyet'e geçişi hızlandı"], ["Maltepe (Palekanon) Savaşı", "1329 · Bizans ile yapılan ilk meydan savaşı kazanıldı"], ["I. İnönü Savaşı", "1921 · Düzenli ordunun ilk zaferi kazanıldı"]],
+    [["Sırpsındığı Savaşı", "1364 · Osmanlılara karşı kurulan ilk Haçlı ittifakı yenildi"], ["Islahat Fermanı", "1856 · Gayrimüslimlere geniş haklar tanındı"], ["Sakarya Meydan Savaşı", "1921 · Mustafa Kemal'e mareşallik rütbesi ve gazilik unvanı verildi"], ["Hicret", "622 · Hicri takvimin başlangıcı kabul edildi"]],
+    [["Mondros Ateşkes Antlaşması", "1918 · Osmanlı Devleti fiilen sona erdi"], ["Soyadı Kanunu", "1934 · Toplumsal hayattaki karışıklıkların önüne geçildi"], ["Karlofça Antlaşması", "1699 · Osmanlı ilk kez büyük çapta toprak kaybetti"], ["Ankara Savaşı", "1402 · Osmanlı'da Fetret Devri başladı"]],
+    [["Büyük Taarruz", "1922 · Yunan ordusu Anadolu'dan çıkarıldı"], ["Çimpe Kalesi'nin alınması", "1353 · Osmanlılar Rumeli'ye ilk kez geçti"], ["İzmir İktisat Kongresi", "1923 · Misak-ı İktisadi kabul edildi"], ["Bucaş Antlaşması", "1672 · Osmanlı batıda en geniş sınırlarına ulaştı"]],
+    [["Batı Roma İmparatorluğu'nun yıkılışı", "476 · İlk Çağ sona erdi, Orta Çağ başladı"], ["Mercidabık Savaşı", "1516 · Suriye ve Filistin Osmanlı topraklarına katıldı"], ["Dandanakan Savaşı", "1040 · Büyük Selçuklu Devleti kuruldu"], ["Küçük Kaynarca Antlaşması", "1774 · Kırım'a bağımsızlık verildi"]],
+    [["Takvim-i Vekayi'nin yayımlanması", "1831 · İlk resmî Türk gazetesi çıktı"], ["Ankara Antlaşması (Fransa ile)", "1921 · Güney cephesi kapandı"], ["Lozan Barış Antlaşması", "1923 · Türkiye'nin bağımsızlığı uluslararası alanda tanındı"], ["Vestfalya Barışı", "1648 · Avrupa'da Otuz Yıl Savaşları sona erdi"]],
+    [["Amasya Genelgesi", "1919 · Millî Mücadele'nin gerekçesi, amacı ve yöntemi belirlendi"], ["Berlin Antlaşması", "1878 · Sırbistan, Karadağ ve Romanya bağımsız oldu"], ["Müteferrika Matbaası'nın kurulması", "1727 · İlk Türk matbaası kuruldu"], ["İnebahtı Deniz Savaşı", "1571 · Osmanlı donanması ilk kez büyük bir yenilgiye uğradı"]],
+    [["II. Kosova Savaşı", "1448 · Balkanların Türk yurdu olduğu kesinleşti"], ["Otlukbeli Savaşı", "1473 · Akkoyunlular Osmanlı için tehlike olmaktan çıktı"], ["Harf İnkılabı", "1928 · Latin harflerine dayalı yeni Türk alfabesi kabul edildi"], ["Gümrü Antlaşması", "1920 · TBMM'nin ilk askerî ve siyasi başarısı kazanıldı"]],
+    [["Uşi (Ouchy) Antlaşması", "1912 · Osmanlı'nın Kuzey Afrika'daki son toprağı Trablusgarp kaybedildi"], ["Paris Antlaşması", "1856 · Osmanlı Devleti bir Avrupa devleti sayıldı"], ["Sened-i İttifak", "1808 · Padişahın yetkileri ilk kez sınırlandırıldı"], ["Çanakkale Savaşları", "1915 · İtilaf devletleri Boğazları geçemedi, I. Dünya Savaşı uzadı"]],
+    [["Amerika'nın keşfi", "1492 · Avrupa'da sömürgeciliğin başlamasına zemin hazırlandı"], ["Sadabat Paktı", "1937 · Türkiye, İran, Irak ve Afganistan arasında saldırmazlık paktı imzalandı"], ["Balta Limanı Antlaşması", "1838 · İngiltere'ye geniş ticari ayrıcalıklar tanındı"], ["Mudanya Ateşkes Antlaşması", "1922 · İstanbul ve Doğu Trakya savaşmadan kurtarıldı"]],
+    [["Prut Antlaşması", "1711 · Azak Kalesi Rusya'dan geri alındı"], ["Kadınlara milletvekili seçme ve seçilme hakkı", "1934 · Kadınlar siyasi haklarına tam olarak kavuştu"], ["Kanun-ı Esasi'nin ilanı", "1876 · Osmanlı'da ilk anayasa yürürlüğe girdi"], ["Moskova Antlaşması", "1921 · Misak-ı Millî'yi tanıyan ilk Avrupa devleti Sovyet Rusya oldu"]],
+    [["Türk Tarih Kurumu'nun kurulması", "1931 · Türk tarihinin bilimsel olarak araştırılması amaçlandı"], ["Sevr Antlaşması", "1920 · Osmanlı'yı paylaşan antlaşma hiç yürürlüğe girmedi"], ["Londra Antlaşması", "1913 · Edirne dahil Balkanlardaki toprakların çoğu kaybedildi"], ["İstanbul'un Fethi", "1453 · Orta Çağ kapandı, Yeni Çağ başladı"]],
+    [["Fransız İhtilali", "1789 · Milliyetçilik akımı yayıldı"], ["Amasya Antlaşması", "1555 · Osmanlı ile Safeviler arasındaki ilk resmî antlaşma imzalandı"], ["Düyun-u Umumiye'nin kurulması", "1881 · Osmanlı maliyesi yabancı denetimine girdi"], ["Cumhuriyet'in ilanı", "1923 · Yeni devletin rejim sorunu çözüldü"]],
+    [["Hatay'ın anavatana katılması", "1939 · Misak-ı Millî sınırları içindeki Hatay Türkiye'ye katıldı"], ["Bedir Savaşı", "624 · Müslümanlar müşriklere karşı ilk zaferini kazandı"], ["Türk Medeni Kanunu", "1926 · Kadın ile erkek hukuken eşit sayıldı"], ["Misak-ı Millî", "1920 · Millî Mücadele'nin sınırları ve ilkeleri belirlendi"]],
+    [["TBMM'nin açılması", "1920 · Millî egemenliğe dayalı yeni bir meclis kuruldu"], ["II. Viyana Kuşatması", "1683 · Kuşatma başarısız oldu, Kutsal İttifak savaşları başladı"], ["Mohaç Meydan Savaşı", "1526 · Macaristan Osmanlı'ya bağlandı"], ["Londra Boğazlar Sözleşmesi", "1841 · Boğazlar uluslararası bir statüye kavuştu"]],
+    [["Zitvatorok Antlaşması", "1606 · Avusturya arşidükü Osmanlı padişahıyla eşit sayıldı"], ["Preveze Deniz Savaşı", "1538 · Akdeniz bir Türk gölü hâline geldi"], ["Sivas Kongresi", "1919 · Bütün cemiyetler Anadolu ve Rumeli Müdafaa-i Hukuk Cemiyeti adıyla birleştirildi"], ["Ridaniye Savaşı", "1517 · Mısır alındı, halifelik Osmanlılara geçti"]],
+    [["Vaka-i Hayriye (Yeniçeri Ocağı'nın kaldırılması)", "1826 · Islahatların önündeki büyük engel kalktı"], ["Montrö Boğazlar Sözleşmesi", "1936 · Boğazlar üzerinde tam egemenlik sağlandı"], ["Londra Konferansı", "1921 · İtilaf devletleri TBMM'yi ilk kez hukuken tanıdı"], ["Niğbolu Savaşı", "1396 · Yıldırım Bayezid'e \"Sultan-ı İklim-i Rum\" unvanı verildi"]]
   ]
 };
 
@@ -3225,7 +3343,7 @@ function renderEgitselOyunlar(el) {
   if (oyunUI.ekran === 'hazir') {
     const t = OYUN_TUR_BILGI[oyunUI.tur];
     const aciklama = t.tip === 'eslestirme'
-      ? `Bu oyunda ${OYUN_ES_RAUND_SET_SAYISI} ekran var. Her ekranda solda 4 sözcük, sağda ise karışık sırada anlamları bulunur. Önce sözcüğe, sonra anlamına dokunarak eşleştir. İlk denemede doğru eşleştirdiğin her sözcük 5 puan!`
+      ? `Bu oyunda ${OYUN_ES_RAUND_SET_SAYISI} ekran var. Her ekranda ${t.tanitim || 'solda 4 sözcük, sağda ise karışık sırada anlamları'} bulunur. ${t.talimat || ''} İlk denemede doğru eşleştirdiğin her ${t.birim || 'sözcük'} 5 puan!`
       : t.grup === 'yanlis'
       ? `Bu oyunda ${OYUN_RAUND_SORU_SAYISI} soruluk rastgele bir tur seni bekliyor. Her soruda 4 şıktan yalnızca <b>biri yanlış</b> — onu bul! Cevapladıktan sonra yanlışın doğrusunu ve diğer doğru şıkları da göreceksin; böylece her soruda birden fazla bilgi öğrenmiş olacaksın.`
       : `Bu oyunda ${OYUN_RAUND_SORU_SAYISI} soruluk rastgele bir tur seni bekliyor. Doğru bildiğinde yeşil, yanlış bildiğinde kırmızı renkte göreceksin. Hazır olduğunda başla!`;
@@ -3268,7 +3386,7 @@ function renderEgitselOyunlar(el) {
         <span>Ekran ${oyunUI.index + 1}/${oyunUI.sorular.length}</span>
         <span>✅ ${oyunUI.dogru}</span>
       </div>
-      <div style="background:#fdfaf1;border:1px solid rgba(180,140,60,0.25);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:0.8rem;font-weight:700;color:#3a2a15;line-height:1.4;">${bitti ? '🎉 Tüm sözcükleri eşleştirdin!' : 'Önce soldaki sözcüğe, sonra sağdaki anlamına dokun.'}</div>
+      <div style="background:#fdfaf1;border:1px solid rgba(180,140,60,0.25);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:0.8rem;font-weight:700;color:#3a2a15;line-height:1.4;">${bitti ? '🎉 Hepsini eşleştirdin!' : (t.talimat || 'Önce soldaki sözcüğe, sonra sağdaki anlamına dokun.')}</div>
       <div style="display:grid;grid-template-columns:minmax(0,0.85fr) minmax(0,1.15fr);gap:8px;">
         <div>${solHtml}</div>
         <div>${sagHtml}</div>

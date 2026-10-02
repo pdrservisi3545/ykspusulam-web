@@ -1289,7 +1289,7 @@ function baHesaplaToplamSoru() {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (!key) continue;
-      if (key.indexOf('vgkz_') === 0 || key.indexOf('vgd_') === 0 || key.indexOf('vgbd_') === 0) {
+      if (key.indexOf('vgkz_') === 0 || key.indexOf('vgd_') === 0 || key.indexOf('vgud_') === 0 || key.indexOf('vgbd_') === 0) {
         try {
           const s = JSON.parse(vgGetItem(key) || '{}');
           toplam += (+s.d || 0) + (+s.y || 0) + (+s.b || 0);
@@ -1566,30 +1566,34 @@ function baDenemeDersleriTumu() {
     ...DENEME_VG_DERSLER.AYT.map(d => Object.assign({}, d, { sinav: 'AYT' })),
   ];
 }
-// Veri Girişi > Denemeler'de dolu olan deneme slotlarını, en son güncellenene göre sıralar
+// Veri Girişi > Denemeler (vgd_) ve Denemelerim (vgud_) içinde dolu olan deneme slotlarını, en son
+// güncellenene göre sıralar. Her kayıt { onek, no } döner — iki kaynak birbirine karışmaz.
 function baSonDenemeNolar(adet) {
   const ALL = baDenemeDersleriTumu();
-  const TOPLAM_VG_DENEME = 30;
+  const kaynaklar = [{ onek: 'vgd_', adet: 30 }, { onek: 'vgud_', adet: DENEME_TOPLAM }];
   const denemeler = [];
-  for (let no = 1; no <= TOPLAM_VG_DENEME; no++) {
-    let maxTs = 0, varMi = false;
-    ALL.forEach(d => {
-      try {
-        const s = JSON.parse(vgGetItem('vgd_' + d.sinav + '_' + no + '_' + d.key) || '{}');
-        if (s.d || s.y || s.b) { varMi = true; if (s.ts && s.ts > maxTs) maxTs = s.ts; }
-      } catch(e){}
-    });
-    if (varMi) denemeler.push({ no, ts: maxTs });
-  }
+  kaynaklar.forEach(kn => {
+    for (let no = 1; no <= kn.adet; no++) {
+      let maxTs = 0, varMi = false;
+      ALL.forEach(d => {
+        try {
+          const s = JSON.parse(vgGetItem(kn.onek + d.sinav + '_' + no + '_' + d.key) || '{}');
+          if (s.d || s.y || s.b) { varMi = true; if (s.ts && s.ts > maxTs) maxTs = s.ts; }
+        } catch(e){}
+      });
+      if (varMi) denemeler.push({ onek: kn.onek, no, ts: maxTs });
+    }
+  });
   denemeler.sort((a, b) => b.ts - a.ts);
-  return denemeler.slice(0, adet).map(x => x.no);
+  return denemeler.slice(0, adet).map(x => ({ onek: x.onek, no: x.no }));
 }
-// Bir deneme numarasının net'lerini BA_KATSAYI alan adlarıyla döner
-function baDenemeNetleriOku(no) {
+// Bir deneme numarasının net'lerini BA_KATSAYI alan adlarıyla döner (onek: 'vgd_' Veri Girişi, 'vgud_' Denemelerim)
+function baDenemeNetleriOku(no, onek) {
+  onek = onek || 'vgd_';
   const n = {};
   baDenemeDersleriTumu().forEach(d => {
     try {
-      const s = JSON.parse(vgGetItem('vgd_' + d.sinav + '_' + no + '_' + d.key) || '{}');
+      const s = JSON.parse(vgGetItem(onek + d.sinav + '_' + no + '_' + d.key) || '{}');
       const dd = +s.d || 0, yy = +s.y || 0;
       if (s.d || s.y) {
         const mapKey = BA_DENEME_KEY_MAP[d.key];
@@ -1619,8 +1623,8 @@ function baMevcutPuanSonDenemelerden() {
   const sonuc = {};
   turler.forEach(t => {
     let toplamHam = 0, sayac = 0;
-    sonNolar.forEach(no => {
-      const r = baHamPuanHesaplaTur(t.tur, baDenemeNetleriOku(no));
+    sonNolar.forEach(x => {
+      const r = baHamPuanHesaplaTur(t.tur, baDenemeNetleriOku(x.no, x.onek));
       if (r.girisSayisi > 0) { toplamHam += r.hamToplam; sayac++; }
     });
     if (sayac > 0) sonuc[t.tur] = (toplamHam / sayac) + obpKatkisi;
@@ -2036,13 +2040,17 @@ function baComboTikGoster(etiket, deger, birim) {
   if (el) el.textContent = etiket + ' → ' + (birim || 'Net') + ': ' + deger;
 }
 
-// Bir (sınav, deneme no) için toplam net (Veri Girişi Denemeler'den)
-function baVgdDenemeNet(sinav, no) {
-  const dersler = VG_DERSLER[sinav] || [];
+// Bir (sınav, deneme no) için toplam net. onek: 'vgd_' = Veri Girişi > Denemeler, 'vgud_' = Denemelerim.
+// HATA (düzeltildi): Eskiden VG_DERSLER (konu/ders listesi: tytGeometri, tytFizik...) kullanılıyordu; oysa
+// deneme kayıtları DENEME_VG_DERSLER anahtarlarıyla (tytSosyal, tytFen, aytTarih1...) tutulur. Bu yüzden
+// TYT'de Sosyal + Fen, AYT'de Tarih-1/2 + Coğrafya-1/2 netleri grafiğe hiç eklenmiyordu.
+function baVgdDenemeNet(sinav, no, onek) {
+  onek = onek || 'vgd_';
+  const dersler = DENEME_VG_DERSLER[sinav] || [];
   let net = 0, anyData = false, sonTs = 0;
   dersler.forEach(d => {
     try {
-      const s = JSON.parse(vgGetItem('vgd_' + sinav + '_' + no + '_' + d.key) || '{}');
+      const s = JSON.parse(vgGetItem(onek + sinav + '_' + no + '_' + d.key) || '{}');
       const dd = +s.d || 0, yy = +s.y || 0, bb = +s.b || 0;
       if (dd || yy || bb) { anyData = true; net += dd - yy/4; }
       if (s.ts && s.ts > sonTs) sonTs = s.ts;
@@ -2066,10 +2074,10 @@ function baDenemeTurForSinav(sinav) {
 }
 
 // Bir (sinav, no) denemesi için tahmini puan: taban + kategori netleri × katsayı + kendi OBP katkısı (×0.12)
-function baDenemePuanHesapla(sinav, no) {
+function baDenemePuanHesapla(sinav, no, onek) {
   const tur = baDenemeTurForSinav(sinav);
   if (!tur) return null;
-  const r = baVgdDenemeKategoriNet(sinav, no, tur);
+  const r = baVgdDenemeKategoriNet(sinav, no, tur, onek);
   if (!r) return null;
   const kat = BA_KATSAYI[tur];
   let puan = kat.taban;
@@ -2092,6 +2100,10 @@ function baRenderDenemeler(el) {
       const r = baVgdDenemeNet(sinav, no);
       if (r) vgNoktalar.push({ etiket: 'VG' + no, deger: r.net, ts: r.ts });
     }
+    for (let no = 1; no <= DENEME_TOPLAM; no++) {
+      const r = baVgdDenemeNet(sinav, no, 'vgud_');
+      if (r) vgNoktalar.push({ etiket: 'UD' + no, deger: r.net, ts: r.ts });
+    }
     vgNoktalar.sort((a, b) => a.ts - b.ts);
     noktalar.push(...vgNoktalar);
     if (sinav === 'TYT') {
@@ -2105,6 +2117,10 @@ function baRenderDenemeler(el) {
     for (let no = 1; no <= 30; no++) {
       const r = baDenemePuanHesapla(sinav, no);
       if (r) vgNoktalar.push({ etiket: 'VG' + no, deger: r.puan, ts: r.ts });
+    }
+    for (let no = 1; no <= DENEME_TOPLAM; no++) {
+      const r = baDenemePuanHesapla(sinav, no, 'vgud_');
+      if (r) vgNoktalar.push({ etiket: 'UD' + no, deger: r.puan, ts: r.ts });
     }
     vgNoktalar.sort((a, b) => a.ts - b.ts);
     noktalar.push(...vgNoktalar);
@@ -2135,7 +2151,7 @@ function baRenderDenemeler(el) {
       </div>
       <div style="background:rgba(255,252,244,0.85);border:1px solid rgba(150,110,40,0.25);border-radius:16px;padding:16px;">
         <div style="font-size:0.72rem;font-weight:800;letter-spacing:0.5px;color:#8a6a2f;margin-bottom:4px;">${sinav} DENEME ${gorunum === 'net' ? 'NETLERİ' : 'PUANLARI'} (ÇÖZÜLME SIRASINA GÖRE)</div>
-        <div style="font-size:0.68rem;color:#8a7a5c;margin-bottom:8px;">${gorunum === 'net' ? "VG = Veri Girişi'nde girilen · Sis = Denemeler sekmesinde sistemde çözülen" : 'Puan = taban puan + net × katsayı + OBP × 0.12'}</div>
+        <div style="font-size:0.68rem;color:#8a7a5c;margin-bottom:8px;">${gorunum === 'net' ? "VG = Veri Girişi'nde girilen · UD = Denemelerim'de uygulamada çözülen · Sis = Denemeler sekmesinde sistemde çözülen" : 'VG = Veri Girişi · UD = Denemelerim · Puan = taban puan + net × katsayı + OBP × 0.12'}</div>
         ${puanUyari}
         ${baRenderComboChart(noktalar, 'denemeler', 'baComboTikGoster', gorunum === 'puan' ? 'Puan' : 'Net')}
       </div>
@@ -2215,7 +2231,8 @@ function baSisDenemeKategoriNet(no) {
 
 // Bir Veri Girişi denemesindeki (sinav, no) net'leri, belirli bir türün (BA_KATSAYI[tur]) kategori
 // anahtarlarına göre topla
-function baVgdDenemeKategoriNet(sinav, no, tur) {
+function baVgdDenemeKategoriNet(sinav, no, tur, onek) {
+  onek = onek || 'vgd_';
   const alanlar = Object.keys(BA_KATSAYI[tur]).filter(k => k !== 'taban' && k !== 'eksikTaban');
   const kategoriNet = {};
   let anyData = false, sonTs = 0;
@@ -2224,7 +2241,7 @@ function baVgdDenemeKategoriNet(sinav, no, tur) {
     let toplam = 0, varMi = false;
     BA_DERS_MAP[kat].forEach(dKey => {
       try {
-        const s = JSON.parse(vgGetItem('vgd_' + sinav + '_' + no + '_' + dKey) || '{}');
+        const s = JSON.parse(vgGetItem(onek + sinav + '_' + no + '_' + dKey) || '{}');
         const dd = +s.d || 0, yy = +s.y || 0;
         if (dd || yy) { varMi = true; toplam += dd - yy/4; }
         if (s.ts && s.ts > sonTs) sonTs = s.ts;
@@ -2246,6 +2263,10 @@ function baKullaniciPuaniTur(tur) {
   for (let no = 1; no <= 30; no++) {
     const r = baVgdDenemeKategoriNet(sinav, no, tur);
     if (r && r.ts) kayitlar.push({ kaynak: 'vg', sinav, no, ts: r.ts, kategoriNet: r.kategoriNet });
+  }
+  for (let no = 1; no <= DENEME_TOPLAM; no++) {
+    const r = baVgdDenemeKategoriNet(sinav, no, tur, 'vgud_');
+    if (r && r.ts) kayitlar.push({ kaynak: 'ud', sinav, no, ts: r.ts, kategoriNet: r.kategoriNet });
   }
   if (tur === 'TYT') {
     for (let no = 1; no <= TOPLAM_DENEME; no++) {
@@ -5526,6 +5547,8 @@ function denemeSoruGetir(tur, no, dersKey) {
 }
 
 let denemeGecisYon = null; // 'next' | 'prev' | null — soru değişince sayfa çevirme animasyonu yönü
+// Denemelerim (uygulama içi deneme) sonuç anahtarı — Veri Girişi'nin vgd_ anahtarlarından AYRI (bkz. vgUygulamaDenemeKayitlariniAyir)
+function denemeUygKey(tur, no, dersKey) { return 'vgud_' + tur + '_' + no + '_' + dersKey; }
 let denemeSt = { view:'liste', tur:null, no:null, alan:null, aktifBolum:null, sorular:[], cevaplar:{}, i:0, kalanSn:0, timer:null, sonuc:null, sureBitisTs:null, sureBaslangicTs:null, sureTimer:null, sureTur:null, sureNo:null };
 
 function denemeGeri() {
@@ -5646,7 +5669,7 @@ function denemeSuresiDoldu() {
     });
     const ts = Date.now();
     Object.keys(dersSonuc).forEach(dk => {
-      const key = 'vgd_' + denemeSt.tur + '_' + denemeSt.no + '_' + dk;
+      const key = denemeUygKey(denemeSt.tur, denemeSt.no, dk);
       vgSetItem(key, JSON.stringify({ d: dersSonuc[dk].d, y: dersSonuc[dk].y, b: dersSonuc[dk].b, ts }));
     });
   }
@@ -5683,10 +5706,11 @@ function denemeBitir() {
     else if (cevap === s.dogru) dersSonuc[dk].d++;
     else dersSonuc[dk].y++;
   });
-  // Veri Girişi > Denemeler ile AYNI anahtar formatında kaydedilir — Başarı Analizim bunu otomatik okur
+  // Denemelerim'in KENDİ anahtarına (vgud_) kaydedilir — Veri Girişi > Denemeler'den (vgd_) tamamen ayrıdır.
+  // Başarı Analizim her iki kaynağı da ayrı ayrı okur (grafikte "UD" = Uygulama Denemesi, "VG" = Veri Girişi).
   const ts = Date.now();
   Object.keys(dersSonuc).forEach(dk => {
-    const key = 'vgd_' + denemeSt.tur + '_' + denemeSt.no + '_' + dk;
+    const key = denemeUygKey(denemeSt.tur, denemeSt.no, dk);
     vgSetItem(key, JSON.stringify({ d: dersSonuc[dk].d, y: dersSonuc[dk].y, b: dersSonuc[dk].b, ts }));
   });
   if (denemeSt.aktifBolum) {
@@ -5728,7 +5752,7 @@ function denemeBolumTamamlandiMi(key) {
   if (!b) return false;
   return b.altDersler.every(ad => {
     try {
-      const s = JSON.parse(vgGetItem('vgd_' + denemeSt.tur + '_' + denemeSt.no + '_' + ad.key) || '{}');
+      const s = JSON.parse(vgGetItem(denemeUygKey(denemeSt.tur, denemeSt.no, ad.key)) || '{}');
       return !!(s.d || s.y || s.b);
     } catch (e) { return false; }
   });
@@ -5737,7 +5761,7 @@ function denemeSonucTumBolumlerdenOku() {
   const dersSonuc = {};
   denemeBolumler().forEach(b => {
     try {
-      const s = JSON.parse(vgGetItem('vgd_' + denemeSt.tur + '_' + denemeSt.no + '_' + b.key) || '{}');
+      const s = JSON.parse(vgGetItem(denemeUygKey(denemeSt.tur, denemeSt.no, b.key)) || '{}');
       dersSonuc[b.key] = { d: +s.d || 0, y: +s.y || 0, b: +s.b || 0, ad: b.ad };
     } catch (e) {}
   });
@@ -5840,7 +5864,7 @@ function denemeListeGoster(el) {
     let toplam = 0, varMi = false;
     bolumler.forEach(b => {
       try {
-        const s = JSON.parse(vgGetItem('vgd_' + tur + '_' + no + '_' + b.key) || '{}');
+        const s = JSON.parse(vgGetItem(denemeUygKey(tur, no, b.key)) || '{}');
         const dd = +s.d||0, yy = +s.y||0;
         if (s.d || s.y) { varMi = true; toplam += dd - yy/4; }
       } catch(e){}
