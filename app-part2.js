@@ -2887,10 +2887,18 @@ function dpKutuMetinKaydet(di, ii, val) {
     p.days[di].items[ii].metin = val;
   }
 }
-function dpKutuEkleModu(di, ii) { dpVideoSecici = { di, ii }; dpVideoSeciciDersIdx = null; dpRerender(); }
+function dpKutuEkleModu(di, ii) { dpVideoSecici = { di, ii, sinav: null, dersIdx: null }; dpVideoSeciciDersIdx = null; dpRerender(); }
 function dpVideoSeciciKapat() { dpVideoSecici = null; dpVideoSeciciDersIdx = null; dpRerender(); }
-function dpVideoSeciciDersAc(dersIdx) { dpVideoSeciciDersIdx = dersIdx; dpRerender(); }
-function dpVideoSeciciDersGeri() { dpVideoSeciciDersIdx = null; dpRerender(); }
+function dpVsSinav(tur) { if (!dpVideoSecici) return; dpVideoSecici.sinav = tur; dpVideoSecici.dersIdx = null; dpRerender(); }
+function dpVsDers(idx) { if (!dpVideoSecici) return; dpVideoSecici.dersIdx = idx; dpRerender(); }
+function dpVsSec(dIdx, kIdx, vIdx) {
+  const d = KV_DERSLER[dIdx]; if (!d) return;
+  const k = kvKonular(d)[kIdx]; const v = kvGetVideos(d, kIdx)[vIdx]; if (!v) return;
+  dpVideoSec(d.ad + ' — ' + k + ' — ' + v.ad, v.url || '');
+}
+// Eski adlar (geriye dönük uyumluluk)
+function dpVideoSeciciDersAc(dersIdx) { dpVsDers(dersIdx); }
+function dpVideoSeciciDersGeri() { dpVsDers(null); }
 function dpVideoSec(baslik, url) {
   if (!dpVideoSecici) return;
   const { di, ii } = dpVideoSecici;
@@ -2900,6 +2908,84 @@ function dpVideoSec(baslik, url) {
   p.days[di].items[ii].url = url || '';
   dpVideoSecici = null;
   dpRerender();
+}
+
+
+// ============================================================
+//  🎬 MODÜLER VİDEO SEÇİCİ (Ders Programı oluştururken "Ekle") — öğretmen ve öğrenci ekranı ortak
+//  1) TYT / AYT / YDT kartları  →  2) seçilen bölümün dersleri (kartlar)  →  3) dersin konuları
+//  müfredat sırasıyla numaralı; her konunun videoları kendi başlığı altında.
+//  sec = { sinav: null|'TYT'|'AYT'|'YDT', dersIdx: null|KV_DERSLER index }
+//  fn  = { sinav: 'fonk', ders: 'fonk', sec: 'fonk', kapat: 'fonk' } (onclick'te çağrılacak global fonksiyon adları)
+// ============================================================
+const VS_SINAVLAR = [
+  { tur: 'TYT', ad: 'TYT', alt: 'Temel Yeterlilik Testi', emoji: '📘', renk: 'linear-gradient(160deg,#3a5a86,#2c4566)' },
+  { tur: 'AYT', ad: 'AYT', alt: 'Alan Yeterlilik Testi', emoji: '📗', renk: 'linear-gradient(160deg,#2d6e56,#1f5442)' },
+  { tur: 'YDT', ad: 'YDT', alt: 'Yabancı Dil Testi', emoji: '🇬🇧', renk: 'linear-gradient(160deg,#8a4a2f,#6b3520)' }
+];
+function vsDersVideoSayisi(d) {
+  let n = 0;
+  kvKonular(d).forEach((k, i) => { n += kvGetVideos(d, i).length; });
+  return n;
+}
+function vsIcerik(sec, fn) {
+  sec = sec || {};
+  // 3) Ders seçili: konular sırayla, altında videoları
+  if (sec.dersIdx !== null && sec.dersIdx !== undefined && KV_DERSLER[sec.dersIdx]) {
+    const d = KV_DERSLER[sec.dersIdx];
+    const konular = kvKonular(d);
+    let html = '';
+    let toplam = 0;
+    konular.forEach((k, i) => {
+      const vids = kvGetVideos(d, i);
+      if (!vids.length) return;
+      toplam += vids.length;
+      html += `
+        <div style="background:rgba(255,252,244,0.95);border:1px solid rgba(150,110,40,0.35);border-radius:12px;padding:10px 10px 4px;margin-bottom:10px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <span style="flex-shrink:0;min-width:24px;height:24px;padding:0 6px;border-radius:12px;background:linear-gradient(135deg,#d4af5a,#8a6a2f);color:#241c0e;font-size:0.72rem;font-weight:900;display:flex;align-items:center;justify-content:center;">${i + 1}</span>
+            <span style="font-weight:800;font-size:0.84rem;color:#3a2a15;line-height:1.3;">${k}</span>
+          </div>
+          ${vids.map((v, vi) => `
+            <div onclick="${fn.sec}(${sec.dersIdx},${i},${vi})" style="cursor:pointer;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid rgba(150,110,40,0.3);border-radius:10px;padding:9px 10px;margin-bottom:6px;font-size:0.8rem;color:#3a2a15;">
+              <span>▶️</span><span style="flex:1;">${v.ad}</span><span style="color:#b8903f;">＋</span>
+            </div>`).join('')}
+        </div>`;
+    });
+    if (!toplam) html = '<div style="color:#6b5636;font-size:0.82rem;padding:10px;">Bu derste henüz Konu Videoları\'nda eklenmiş video yok.</div>';
+    else html = `<div style="font-size:0.74rem;color:#6b5636;margin-bottom:10px;">Konular müfredat sırasıyla listelenir (yalnızca videosu olan konular). Eklemek istediğin videoya dokun.</div>` + html;
+    return { baslik: '🎬 ' + d.ad, html, geri: fn.ders + '(null)' };
+  }
+  // 2) Bölüm seçili: o bölümün dersleri kartlar halinde
+  if (sec.sinav) {
+    const s = VS_SINAVLAR.find(x => x.tur === sec.sinav) || VS_SINAVLAR[0];
+    const dersler = KV_DERSLER.map((d, idx) => ({ d, idx })).filter(({ d }) => kvSinavEtiket(d) === s.tur);
+    const kart = ({ d, idx }) => {
+      const n = vsDersVideoSayisi(d);
+      const ad = d.ad.replace(/\s*\((TYT|AYT|YDT)\)\s*/, '').replace(/^(AYT|YDT|TYT)\s+/, '');
+      return `
+        <div onclick="${n ? `${fn.ders}(${idx})` : ''}" style="cursor:${n ? 'pointer' : 'default'};opacity:${n ? 1 : 0.5};background:rgba(255,252,244,0.95);border:1px solid rgba(150,110,40,0.4);border-radius:14px;padding:14px 10px;text-align:center;box-shadow:0 3px 8px rgba(120,90,30,0.12);">
+          <div style="font-weight:800;font-size:0.86rem;color:#3a2a15;margin-bottom:4px;">${ad}</div>
+          <div style="font-size:0.7rem;color:#8a7a5c;">${n ? n + ' video' : 'Video yok'}</div>
+        </div>`;
+    };
+    const html = `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">${dersler.map(kart).join('')}</div>`;
+    return { baslik: '🎬 ' + s.ad + ' Dersleri', html, geri: fn.sinav + '(null)' };
+  }
+  // 1) Bölüm seçimi: TYT / AYT / YDT kartları
+  const kart = (s) => {
+    const n = KV_DERSLER.filter(d => kvSinavEtiket(d) === s.tur).reduce((a, d) => a + vsDersVideoSayisi(d), 0);
+    return `
+      <div onclick="${fn.sinav}('${s.tur}')" style="cursor:pointer;background:${s.renk};border-radius:16px;padding:18px 8px;text-align:center;color:#fff;box-shadow:0 4px 12px rgba(0,0,0,0.2);">
+        <div style="font-size:1.7rem;margin-bottom:4px;">${s.emoji}</div>
+        <div style="font-weight:900;font-size:1.05rem;">${s.ad}</div>
+        <div style="font-size:0.62rem;opacity:0.85;margin-top:2px;line-height:1.25;">${s.alt}</div>
+        <div style="font-size:0.68rem;margin-top:8px;background:rgba(255,255,255,0.18);border-radius:10px;padding:3px 6px;display:inline-block;">${n} video</div>
+      </div>`;
+  };
+  const html = `<div style="font-size:0.78rem;color:#6b5636;margin-bottom:10px;">Önce bölümü seç.</div>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">${VS_SINAVLAR.map(kart).join('')}</div>`;
+  return { baslik: '🎬 Video Seç', html, geri: fn.kapat + '()' };
 }
 
 function dpVideoSeciciDersVideoSayisi(d) {
@@ -2920,43 +3006,8 @@ function dpRenderVideoSeciciEkrani() {
       </div>
     </div>`;
 
-  // Seviye 2: bir ders seçilmiş -- o dersin konu/video listesi gösterilir (buradan seçim yapılır).
-  if (dpVideoSeciciDersIdx !== null && KV_DERSLER[dpVideoSeciciDersIdx]) {
-    const d = KV_DERSLER[dpVideoSeciciDersIdx];
-    const konular = kvKonular(d);
-    const linkli = [];
-    konular.forEach((k, i) => {
-      kvGetVideos(d, i).forEach(v => {
-        linkli.push({ baslik: k + ' — ' + v.ad, url: v.url || '' });
-      });
-    });
-    const liste = linkli.length
-      ? linkli.map(v => `
-        <div onclick="dpVideoSec('${(d.ad + ' — ' + v.baslik).replace(/'/g, "\\'")}','${(v.url||'').replace(/'/g, "\\'")}')" style="background:rgba(255,252,244,0.92);border:1px solid rgba(150,110,40,0.4);border-radius:10px;padding:10px 12px;margin-bottom:6px;cursor:pointer;font-size:0.8rem;color:#3a2a15;display:flex;align-items:center;gap:8px;">
-          <span style="font-size:1rem;">▶️</span><span style="flex:1;">${v.baslik}</span>
-        </div>`).join('')
-      : '<div style="color:#6b5636;font-size:0.82rem;padding:10px;">Bu derste henüz Konu Videoları\'nda link eklenmiş video yok.</div>';
-    return wrapAc(liste, '🎬 ' + d.ad, 'dpVideoSeciciDersGeri()');
-  }
-
-  // Seviye 1: dersler, sınav türüne göre gruplanmış tuşlar halinde listelenir (TYT / AYT / YDT).
-  const gruplar = [
-    { baslik: '📋 TYT Dersleri', tur: 'TYT' },
-    { baslik: '📋 AYT Dersleri', tur: 'AYT' },
-    { baslik: '📋 YDT', tur: 'YDT' }
-  ];
-  const dersTusu = (d, idx) => `
-    <div onclick="dpVideoSeciciDersAc(${idx})" style="cursor:pointer;display:flex;align-items:center;gap:10px;background:rgba(255,252,244,0.92);border:1px solid rgba(150,110,40,0.4);border-radius:10px;padding:10px 12px;margin-bottom:6px;font-size:0.82rem;color:#3a2a15;">
-      <span style="font-size:1rem;">🎬</span><span style="flex:1;font-weight:700;">${d.ad}</span>
-      <span style="color:#8a7a5c;font-size:0.72rem;">${dpVideoSeciciDersVideoSayisi(d)} video ›</span>
-    </div>`;
-  const grupBaslik = (t) => `<div style="font-weight:800;font-size:0.85rem;margin:14px 0 8px;color:#3a2a15;display:flex;align-items:center;gap:8px;"><span style="width:4px;height:16px;background:linear-gradient(180deg,#d4af5a,#8a6a2f);border-radius:2px;"></span>${t}</div>`;
-  const icHtml = gruplar.map(g => {
-    const dersler = KV_DERSLER.map((d, idx) => ({ d, idx })).filter(({d}) => kvSinavEtiket(d) === g.tur);
-    if (!dersler.length) return '';
-    return grupBaslik(g.baslik) + dersler.map(({d, idx}) => dersTusu(d, idx)).join('');
-  }).join('');
-  return wrapAc(icHtml, '🎬 Video Seç — Ders Seç', 'dpVideoSeciciKapat()');
+  const r = vsIcerik(dpVideoSecici, { sinav: 'dpVsSinav', ders: 'dpVsDers', sec: 'dpVsSec', kapat: 'dpVideoSeciciKapat' });
+  return wrapAc(r.html, r.baslik, r.geri);
 }
 
 function dpRenderOlusturEkrani(el) {

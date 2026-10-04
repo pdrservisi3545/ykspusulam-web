@@ -1621,7 +1621,14 @@ function tvDpKutuYazModu(di, ii) { tvDp.draft.days[di].items[ii].tip = 'yazi'; t
 function tvDpKutuMetinKaydet(di, ii, val) {
   if (tvDp.draft.days[di] && tvDp.draft.days[di].items[ii]) tvDp.draft.days[di].items[ii].metin = val;
 }
-function tvDpKutuEkleModu(di, ii) { tvDpVideoSecici = { di, ii }; tvDpRerender(); }
+function tvDpKutuEkleModu(di, ii) { tvDpVideoSecici = { di, ii, sinav: null, dersIdx: null }; tvDpRerender(); }
+function tvDpVsSinav(tur) { if (!tvDpVideoSecici) return; tvDpVideoSecici.sinav = tur; tvDpVideoSecici.dersIdx = null; tvDpRerender(); }
+function tvDpVsDers(idx) { if (!tvDpVideoSecici) return; tvDpVideoSecici.dersIdx = idx; tvDpRerender(); }
+function tvDpVsSec(dIdx, kIdx, vIdx) {
+  const d = KV_DERSLER[dIdx]; if (!d) return;
+  const k = kvKonular(d)[kIdx]; const v = kvGetVideos(d, kIdx)[vIdx]; if (!v) return;
+  tvDpVideoSec(d.ad + ' — ' + k + ' (' + v.ad + ')', v.url || '');
+}
 function tvDpVideoSeciciKapat() { tvDpVideoSecici = null; tvDpRerender(); }
 function tvDpVideoSec(baslik, url) {
   if (!tvDpVideoSecici) return;
@@ -1668,36 +1675,12 @@ function tvDpRenderLinkEkraniIcerik() {
 
 // Konu İzle'deki tüm videoları ders ders (ve konu konu) sıralı listeler.
 function tvDpRenderVideoSeciciEkrani() {
-  const linkli = [];
-  KV_DERSLER.forEach(d => {
-    const konular = kvKonular(d);
-    konular.forEach((k, i) => {
-      kvGetVideos(d, i).forEach(v => {
-        linkli.push({ ders: d.ad, baslik: d.ad + ' — ' + k + ' (' + v.ad + ')', url: v.url || '' });
-      });
-    });
-  });
-  let liste;
-  if (!linkli.length) {
-    liste = '<div class="pmeta">Henüz Konu Videoları\'nda eklenmiş video yok.</div>';
-  } else {
-    // Ders ders grupla, gruplar içinde sırayla listele
-    const gruplar = {};
-    linkli.forEach(v => { (gruplar[v.ders] = gruplar[v.ders] || []).push(v); });
-    liste = Object.keys(gruplar).map(dersAd => `
-      <div style="margin-bottom:12px;">
-        <div style="font-weight:800;font-size:0.82rem;color:var(--accent);margin-bottom:6px;">${dersAd}</div>
-        ${gruplar[dersAd].map(v => `
-          <div onclick="tvDpVideoSec('${v.baslik.replace(/'/g, "\\'")}','${(v.url||'').replace(/'/g, "\\'")}')"
-            style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:9px 12px;margin-bottom:6px;cursor:pointer;font-size:0.8rem;display:flex;align-items:center;gap:8px;">
-            <span>▶️</span><span style="flex:1;">${v.baslik}</span>
-          </div>`).join('')}
-      </div>`).join('');
-  }
+  // Modüler seçici (TYT/AYT/YDT → dersler → konular sırayla) — bkz. vsIcerik (app-part2)
+  const r = vsIcerik(tvDpVideoSecici, { sinav: 'tvDpVsSinav', ders: 'tvDpVsDers', sec: 'tvDpVsSec', kapat: 'tvDpVideoSeciciKapat' });
   return `
-    <button class="btn-link" onclick="tvDpVideoSeciciKapat()" style="text-align:left;margin:0 0 12px;">← Geri</button>
-    <h3 style="font-size:1rem;margin-bottom:12px;">🎬 Video Seç</h3>
-    ${liste}`;
+    <button class="btn-link" onclick="${r.geri}" style="text-align:left;margin:0 0 12px;">← Geri</button>
+    <h3 style="font-size:1rem;margin-bottom:12px;">${r.baslik}</h3>
+    ${r.html}`;
 }
 
 function tvDpRenderOlusturEkrani(o) {
