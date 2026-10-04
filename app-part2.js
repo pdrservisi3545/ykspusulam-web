@@ -2808,6 +2808,26 @@ function dpSaveOwn(id, p) {
     cloudSaveDocDebounced('programs', id, p);
   }
 }
+// Programın EN GÜNCEL halini buluttan okur. Program buluttan yalnızca girişte bir kez okunduğu için,
+// öğretmen "Tikleri Sil"e bastığında öğrencinin açık uygulaması eski kopyayla tik koyarsa eski tikler
+// (ve öğretmenin yaptığı değişiklikler) buluta geri yazılabiliyordu. Tik koymadan / programı düzenlemeden
+// önce bu fonksiyonla güncel kopya alınır. Kendi bekleyen (henüz gönderilmemiş) yazmamız varsa o daha
+// yeni olduğu için buluttan okunmaz. Ağ yavaşsa en çok 2,5 sn beklenir, sonra eldeki kopyayla devam edilir.
+async function dpBuluttanTazele(id) {
+  if (!cloud.on || !id) return false;
+  if (typeof cloudPendingWrites !== 'undefined' && cloudPendingWrites['programs/' + id]) return false;
+  let taze = null;
+  try {
+    taze = await Promise.race([cloudLoadDoc('programs', id), new Promise(r => setTimeout(() => r(null), 2500))]);
+  } catch (e) { taze = null; }
+  if (taze && Array.isArray(taze.days) && taze.days.length === 7) {
+    const degisti = JSON.stringify(taze) !== JSON.stringify(cloud.programs[id] || null);
+    cloud.programs[id] = taze;
+    return degisti;
+  }
+  return false;
+}
+let dpSonTazeleTs = 0, dpTazeleniyor = false, dpTikIslemde = false;
 function dpOwnUserId() { return currentUser ? currentUser.id : ''; }
 function dpRerender() { renderDersProgramim(document.getElementById('mainContent')); injectBackButton(); }
 function dpBosProgram() { return { days: Array.from({length:7}, () => ({ items: [] })) }; }
@@ -2992,17 +3012,38 @@ function dpRenderOlusturEkrani(el) {
 
 // Öğrenci bir kutucuğu "çalıştım" olarak işaretler/kaldırır. Kendi cihazında
 // hem yerelde hem (varsa) bulutta saklanır ki rehber öğretmen de görebilsin.
-function dpItemTamamToggle(di, idx) {
-  const dpUserId = currentUser ? currentUser.id : '';
-  const own = dpGetOwn(dpUserId);
-  if (own.days[di] && own.days[di].items[idx]) {
-    own.days[di].items[idx].tamam = !own.days[di].items[idx].tamam;
-    dpSaveOwn(dpUserId, own);
+async function dpItemTamamToggle(di, idx) {
+  if (dpTikIslemde) return;
+  dpTikIslemde = true;
+  try {
+    const dpUserId = currentUser ? currentUser.id : '';
+    // Önce güncel programı al (öğretmen bu arada tikleri silmiş ya da programı değiştirmiş olabilir)
+    const oncekiMetin = (() => { const o = dpGetOwn(dpUserId); const it = o.days[di] && o.days[di].items[idx]; return it ? JSON.stringify([it.tip, it.metin, it.video, it.url]) : null; })();
+    await dpBuluttanTazele(dpUserId);
+    const own = dpGetOwn(dpUserId);
+    const it = own.days[di] && own.days[di].items[idx];
+    // Öğretmen programı değiştirdiyse aynı konumdaki kutucuk artık başka bir şey olabilir — o zaman
+    // yanlış kutucuğu işaretlememek için sadece ekranı yenile.
+    if (it && JSON.stringify([it.tip, it.metin, it.video, it.url]) === oncekiMetin) {
+      it.tamam = !it.tamam;
+      dpSaveOwn(dpUserId, own);
+    }
+  } finally {
+    dpTikIslemde = false;
   }
-  renderDersProgramim(document.getElementById('mainContent'));
+  if (state.currentTab === 'dersProgramim') renderDersProgramim(document.getElementById('mainContent'));
 }
 function renderDersProgramim(el) {
   if (dpEditState.on) { dpRenderOlusturEkrani(el); return; }
+  // Ekran her açıldığında (en çok 15 sn'de bir) arka planda buluttaki güncel program alınır;
+  // öğretmen tikleri silmiş / programı değiştirmişse ekran kendiliğinden yenilenir.
+  if (cloud.on && !dpTazeleniyor && Date.now() - dpSonTazeleTs > 15000) {
+    dpTazeleniyor = true; dpSonTazeleTs = Date.now();
+    dpBuluttanTazele(currentUser ? currentUser.id : '').then(degisti => {
+      dpTazeleniyor = false;
+      if (degisti && state.currentTab === 'dersProgramim' && !dpEditState.on) renderDersProgramim(document.getElementById('mainContent'));
+    }).catch(() => { dpTazeleniyor = false; });
+  }
   const dpUserId = currentUser ? currentUser.id : '';
   const own = dpGetOwn(dpUserId);
   const ownDoluGun = d => d.items.some(it => it && ((it.tip === 'yazi' && it.metin && it.metin.trim()) || (it.tip === 'video' && it.video) || (it.tip === 'link' && it.url)));

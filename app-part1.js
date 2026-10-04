@@ -1546,9 +1546,43 @@ let tvDpVideoSecici = null; // { di, ii }
 
 function tvDpRerender() { renderRolePanel(); }
 
-function tvDpOlustur(id) {
-  tvDp = { on: true, draft: JSON.parse(JSON.stringify(dpGetOwn(id))), backup: null, studentId: id };
+async function tvDpOlustur(id) {
+  // Öğrencinin bu arada koyduğu tikleri/programın son halini kaybetmemek için önce buluttan güncel kopya alınır
+  try { await dpBuluttanTazele(id); } catch (e) {}
+  tvDp = { on: true, draft: JSON.parse(JSON.stringify(dpGetOwn(id))), backup: null, studentId: id, mesaj: '' };
   tvDpVideoSecici = null;
+  tvDpRerender();
+}
+// "Tikleri Sil": öğrencinin ders programında "çalıştım" diye işaretlediği TÜM kutucukların tiki kaldırılır,
+// kutucuklar normal rengine döner. Kutucukların içeriği (yazı/video/link) DEĞİŞMEZ. Öğrenciye hemen kaydedilir
+// (Kaydet beklenmez); öğretmenin taslaktaki kaydedilmemiş düzenlemeleri korunur, sadece taslaktaki tikler de
+// kaldırılır. "Geri Al" ile tikler geri getirilebilir. Öğrenci istediği zaman yeniden tik koyabilir.
+function dpTikSayisi(p) {
+  let n = 0;
+  ((p && p.days) || []).forEach(d => (d.items || []).forEach(it => { if (it && it.tamam) n++; }));
+  return n;
+}
+function dpTikleriTemizle(p) {
+  ((p && p.days) || []).forEach(d => (d.items || []).forEach(it => { if (it && it.tamam) delete it.tamam; }));
+  return p;
+}
+async function tvDpTikleriSil() {
+  if (!tvDp.studentId) return;
+  const id = tvDp.studentId;
+  try { await dpBuluttanTazele(id); } catch (e) {}
+  const kayitli = JSON.parse(JSON.stringify(dpGetOwn(id)));
+  const sayi = dpTikSayisi(kayitli);
+  if (!sayi) {
+    dpTikleriTemizle(tvDp.draft);
+    tvDp.mesaj = 'Öğrencinin programında silinecek tik yok.';
+    tvDpRerender();
+    return;
+  }
+  if (!confirm('Öğrencinin ders programındaki ' + sayi + ' tik silinecek ve kutucuklar normal rengine dönecek. Emin misin?')) return;
+  tvDp.backup = JSON.parse(JSON.stringify(kayitli));
+  dpSaveOwn(id, dpTikleriTemizle(kayitli));
+  dpTikleriTemizle(tvDp.draft);
+  tvDp.mesaj = '✔️ ' + sayi + ' tik silindi. Öğrenci kutucukları yeniden işaretleyebilir. (Geri almak için "Geri Al")';
   tvDpRerender();
 }
 function tvDpEditKapat() {
@@ -1566,6 +1600,7 @@ function tvDpKaydet() {
 function tvDpSil() {
   if (!tvDp.studentId) return;
   tvDp.backup = JSON.parse(JSON.stringify(dpGetOwn(tvDp.studentId)));
+  tvDp.mesaj = '';
   const bos = dpBosProgram();
   tvDp.draft = bos;
   dpSaveOwn(tvDp.studentId, JSON.parse(JSON.stringify(bos)));
@@ -1577,6 +1612,7 @@ function tvDpGeriAl() {
   tvDp.draft = geri;
   dpSaveOwn(tvDp.studentId, JSON.parse(JSON.stringify(geri)));
   tvDp.backup = null;
+  tvDp.mesaj = '↩️ Geri alındı.';
   tvDpRerender();
 }
 function tvDpKutuEkle(di) { tvDp.draft.days[di].items.push({ tip: null, metin: '', video: '' }); tvDpRerender(); }
@@ -1681,8 +1717,10 @@ function tvDpRenderOlusturEkrani(o) {
       } else {
         icerik = `<div style="font-size:0.72rem;color:var(--text3);text-align:center;padding:6px 0;">Boş kutucuk</div>`;
       }
+      const tikli = !!it.tamam;
       return `
-        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px;margin-bottom:6px;">
+        <div style="background:${tikli ? '#d9fbd0' : 'var(--surface2)'};border:1px solid ${tikli ? '#2ecc40' : 'var(--border)'};border-radius:10px;padding:8px;margin-bottom:6px;">
+          ${tikli ? '<div style="font-size:0.66rem;font-weight:800;color:#166534;margin-bottom:4px;">✔️ Öğrenci çalıştı</div>' : ''}
           ${icerik}
           <div style="display:flex;gap:4px;margin-top:6px;">
             <button onclick="tvDpKutuYazModu(${di},${ii})" style="flex:1;font-size:0.65rem;padding:5px 2px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;">✏️ Yaz</button>
@@ -1709,7 +1747,9 @@ function tvDpRenderOlusturEkrani(o) {
       <button class="btn-primary" style="flex:1;min-width:120px;background:var(--green);" onclick="tvDpKaydet()">💾 Kaydet</button>
       <button class="btn-primary" style="flex:1;min-width:120px;background:var(--red);" onclick="tvDpSil()">🗑️ Sil</button>
       <button class="btn-primary" style="flex:1;min-width:120px;background:var(--surface2);color:var(--text2);${tvDp.backup ? '' : 'opacity:0.5;'}" onclick="tvDpGeriAl()">↩️ Geri Al</button>
+      <button class="btn-primary" style="flex:1;min-width:120px;background:#0f766e;" onclick="tvDpTikleriSil()">✔️ Tikleri Sil</button>
     </div>
+    ${tvDp.mesaj ? `<div style="background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;border-radius:10px;padding:8px 10px;font-size:0.78rem;margin-bottom:10px;">${tvDp.mesaj}</div>` : ''}
     <p class="pmeta" style="margin-bottom:12px;">Her günün altına istediğin kadar kutucuk ekleyip yazı veya video ekleyebilirsin. Değişiklikler "Kaydet" tuşuna basana kadar kalıcı olmaz.</p>
     <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;">${cols}</div>`;
 }
@@ -3023,13 +3063,14 @@ const OYUN_TUR_BILGI = {
   sozcukteAnlam: { ad: 'Sözcükte Anlam', emoji: '🔤', grup: 'eslestirme', tip: 'eslestirme', tanitim: 'solda 4 sözcük, sağda ise karışık sırada anlamları', talimat: 'Önce soldaki sözcüğe, sonra sağdaki anlamına dokun.', birim: 'sözcük' },
   deyimAnlam: { ad: 'Deyim - Anlam', emoji: '💬', grup: 'eslestirme', tip: 'eslestirme', tanitim: 'solda 4 deyim, sağda ise karışık sırada anlamları', talimat: 'Önce soldaki deyime, sonra sağdaki anlamına dokun.', birim: 'deyim' },
   edebiAkim: { ad: 'Edebi Akım - Sanatçı', emoji: '🖋️', grup: 'eslestirme', tip: 'eslestirme', tanitim: 'solda 4 sanatçı, sağda ise karışık sırada bağlı oldukları edebi akımlar', talimat: 'Önce soldaki sanatçıya, sonra sağdaki akımına dokun.', birim: 'sanatçı' },
+  toplulukSanatci: { ad: 'Edebî Topluluk - Sanatçı', emoji: '👥', grup: 'eslestirme', tip: 'eslestirme', tanitim: 'solda 4 sanatçı, sağda ise karışık sırada bağlı oldukları Türk edebiyatı toplulukları', talimat: 'Önce soldaki sanatçıya, sonra sağdaki topluluğuna dokun.', birim: 'sanatçı' },
   tarihOlay: { ad: 'Tarih: Olay - Yıl - Sonuç', emoji: '🏛️', grup: 'eslestirme', tip: 'eslestirme', tanitim: 'solda 4 tarihî olay, sağda ise karışık sırada yılları ve sonuçları', talimat: 'Önce soldaki olaya, sonra sağdaki yıl ve sonucuna dokun.', birim: 'olay' }
 };
 
 const OYUN_GRUP_BILGI = {
   dogru: { ekran: 'hangisiDogru', baslik: 'Hangisi Doğru?', emoji: '🤔', aciklama: 'Yazım kuralları ve noktalama işaretleri oyunları', turler: ['yazim', 'noktalama'] },
   yanlis: { ekran: 'hangisiYanlis', baslik: 'Hangisi Yanlış?', emoji: '🧐', aciklama: 'Yanlışı bul, doğruları öğren: yazar-eser ve geometri formül avı', turler: ['yazarEser', 'geometriFormul'] },
-  eslestirme: { ekran: 'eslestirmeBolum', baslik: 'Eşleştirme', emoji: '🔗', aciklama: 'Sözcükte anlam, deyimler, edebi akımlar ve tarih eşleştirmeleri', turler: ['sozcukteAnlam', 'deyimAnlam', 'edebiAkim', 'tarihOlay'] }
+  eslestirme: { ekran: 'eslestirmeBolum', baslik: 'Eşleştirme', emoji: '🔗', aciklama: 'Sözcükte anlam, deyimler, edebi akımlar, edebî topluluklar ve tarih eşleştirmeleri', turler: ['sozcukteAnlam', 'deyimAnlam', 'edebiAkim', 'toplulukSanatci', 'tarihOlay'] }
 };
 
 const OYUN_RAUND_SORU_SAYISI = 20;
@@ -3149,6 +3190,25 @@ const OYUN_ESLESTIRME_SETLERI = {
     [["TBMM'nin açılması", "1920 · Millî egemenliğe dayalı yeni bir meclis kuruldu"], ["II. Viyana Kuşatması", "1683 · Kuşatma başarısız oldu, Kutsal İttifak savaşları başladı"], ["Mohaç Meydan Savaşı", "1526 · Macaristan Osmanlı'ya bağlandı"], ["Londra Boğazlar Sözleşmesi", "1841 · Boğazlar uluslararası bir statüye kavuştu"]],
     [["Zitvatorok Antlaşması", "1606 · Avusturya arşidükü Osmanlı padişahıyla eşit sayıldı"], ["Preveze Deniz Savaşı", "1538 · Akdeniz bir Türk gölü hâline geldi"], ["Sivas Kongresi", "1919 · Bütün cemiyetler Anadolu ve Rumeli Müdafaa-i Hukuk Cemiyeti adıyla birleştirildi"], ["Ridaniye Savaşı", "1517 · Mısır alındı, halifelik Osmanlılara geçti"]],
     [["Vaka-i Hayriye (Yeniçeri Ocağı'nın kaldırılması)", "1826 · Islahatların önündeki büyük engel kalktı"], ["Montrö Boğazlar Sözleşmesi", "1936 · Boğazlar üzerinde tam egemenlik sağlandı"], ["Londra Konferansı", "1921 · İtilaf devletleri TBMM'yi ilk kez hukuken tanıdı"], ["Niğbolu Savaşı", "1396 · Yıldırım Bayezid'e \"Sultan-ı İklim-i Rum\" unvanı verildi"]]
+  ],
+  // Edebî Topluluk - Sanatçı: 11 Türk edebiyatı topluluğu, 56 sanatçı / 14 set; her sette 4 FARKLI topluluk.
+  // İki çizgiyle anılanlar (Refik Halit-Genç Kalemler/Millî Edebiyat, Maviciler-Toplumcu Gerçekçiler, Ahmet Haşim-Servetifünun,
+  // Cenap Şahabettin-Fecr-i Âtî) o toplulukla aynı sete konmadı.
+  toplulukSanatci: [
+    [["Halikarnas Balıkçısı", "Mavi Anadolucular"], ["Faruk Nafiz Çamlıbel", "Beş Hececiler"], ["Ahmet Arif", "Toplumcu Gerçekçiler"], ["Mehmet Çınarlı", "Hisarcılar"]],
+    [["Attilâ İlhan", "Maviciler"], ["Munis Faik Ozansoy", "Hisarcılar"], ["Cenap Şahabettin", "Servetifünun (Edebiyat-ı Cedide)"], ["Ziya Osman Saba", "Yedi Meşaleciler"]],
+    [["Sabahattin Eyüboğlu", "Mavi Anadolucular"], ["Halit Ziya Uşaklıgil", "Servetifünun (Edebiyat-ı Cedide)"], ["Demirtaş Ceyhun", "Maviciler"], ["Mustafa Necati Karaer", "Hisarcılar"]],
+    [["Süleyman Nazif", "Servetifünun (Edebiyat-ı Cedide)"], ["Hasan Hüseyin Korkmazgil", "Toplumcu Gerçekçiler"], ["İlhan Berk", "İkinci Yeni"], ["Enis Behiç Koryürek", "Beş Hececiler"]],
+    [["Ahmet Oktay", "Maviciler"], ["Halit Fahri Ozansoy", "Beş Hececiler"], ["Hüseyin Suat Yalçın", "Servetifünun (Edebiyat-ı Cedide)"], ["Ömer Seyfettin", "Genç Kalemler"]],
+    [["Rıfat Ilgaz", "Toplumcu Gerçekçiler"], ["Muammer Lütfi Bahşi", "Yedi Meşaleciler"], ["Celal Sahir Erozan", "Fecr-i Âtî"], ["Hüseyin Cahit Yalçın", "Servetifünun (Edebiyat-ı Cedide)"]],
+    [["Ahmet Haşim", "Fecr-i Âtî"], ["Cemal Süreya", "İkinci Yeni"], ["Gültekin Samanoğlu", "Hisarcılar"], ["Azra Erhat", "Mavi Anadolucular"]],
+    [["Orhan Seyfi Orhon", "Beş Hececiler"], ["Ziya Gökalp", "Genç Kalemler"], ["Kenan Hulusi Koray", "Yedi Meşaleciler"], ["Şahabettin Süleyman", "Fecr-i Âtî"]],
+    [["Ece Ayhan", "İkinci Yeni"], ["Enver Gökçe", "Toplumcu Gerçekçiler"], ["Vasfi Mahir Kocatürk", "Yedi Meşaleciler"], ["Refik Halit Karay", "Fecr-i Âtî"]],
+    [["Müfit Ratip", "Fecr-i Âtî"], ["Melih Cevdet Anday", "Garip (Birinci Yeni)"], ["Yavuz Bülent Bakiler", "Hisarcılar"], ["Turgut Uyar", "İkinci Yeni"]],
+    [["Tevfik Fikret", "Servetifünun (Edebiyat-ı Cedide)"], ["Hasan İzzettin Dinamo", "Toplumcu Gerçekçiler"], ["Sabri Esat Siyavuşgil", "Yedi Meşaleciler"], ["Emin Bülend Serdaroğlu", "Fecr-i Âtî"]],
+    [["Ülkü Tamer", "İkinci Yeni"], ["Mehmet Rauf", "Servetifünun (Edebiyat-ı Cedide)"], ["Oktay Rifat", "Garip (Birinci Yeni)"], ["Nâzım Hikmet", "Toplumcu Gerçekçiler"]],
+    [["Edip Cansever", "İkinci Yeni"], ["Tahsin Nahit", "Fecr-i Âtî"], ["Yaşar Nabi Nayır", "Yedi Meşaleciler"], ["Yusuf Ziya Ortaç", "Beş Hececiler"]],
+    [["Orhan Veli Kanık", "Garip (Birinci Yeni)"], ["Sezai Karakoç", "İkinci Yeni"], ["Cevdet Kudret Solok", "Yedi Meşaleciler"], ["Ali Canip Yöntem", "Genç Kalemler"]]
   ]
 };
 
