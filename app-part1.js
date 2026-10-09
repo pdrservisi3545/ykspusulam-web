@@ -111,7 +111,7 @@ let state = {
   kazanimlar: {},
   ytLinks: {},
   denemeler: {}, // denemeler[no] = { tarih, dersler: { TYTTurkce: {d,y,b}, ... } }
-  kavanoz: { fotograflar: [], sorular: [] }, // Soru Kavanozu: fotograflar=[{id,dataUrl,tarih}], sorular=[{soruId,tarih}]
+  kavanoz: { fotograflar: [], sorular: [] }, // Soru Kavanozu: fotograflar=[{id,dataUrl,tarih,ders?,konu?}], sorular=[{soruId,tarih}] (sorunun ders/konusu SORULAR'dan)
   bildirimler: [], // Rehber öğretmenden gelen bildirimler: [{mesaj, tarih, okundu, gonderen}]
   sb: { secilenKonu: 'Tümü', seviye: null, filtre: 'Tümü', cevaplar: {}, cevapTs: {}, reveal: {}, sureler: {}, incelemeModu: false, incelemeAcik: {} }, // Soru Bankası cevapları — kalıcı ve kullanıcıya özel olması için state içinde tutulur
   vg: {}, // Veri Girişi (vgkz_/vgd_/vgbd_/vgkbitti_ vb.) ve Denemelerim (vgud_) kutuları — kişiye özel
@@ -1810,6 +1810,61 @@ function prgBildirimGonder(id) {
   prgMsgGoster(id, '🔔 Bildirim gönderildi: "Haftalık planınız hazır!"');
 }
 
+// ---------- Ders Başarısı hesabı (öğretmen › öğrenci analiz) ----------
+function dbDersBasariHesapla(s) {
+  const cevaplar = (s && s.sb && s.sb.cevaplar) || {};
+  // Soru Bankası: ders bazında doğru / yanlış
+  const sb = {};
+  if (typeof SORULAR !== 'undefined' && SORULAR) {
+    const idHarita = {};
+    Object.keys(cevaplar).forEach(id => { if (cevaplar[id]) idHarita[id] = cevaplar[id]; });
+    SORULAR.forEach(q => {
+      const c = idHarita[q.id];
+      if (!c) return;
+      if (!sb[q.ders]) sb[q.ders] = { d: 0, y: 0 };
+      if (c === q.dogru) sb[q.ders].d++; else sb[q.ders].y++;
+    });
+  }
+  return vgTumDersler().map(d => {
+    let vd = 0, vy = 0, vb = 0, tamam = 0;
+    d.kazanimlar.forEach((_, ki) => {
+      const maxT = vgKonuTestSayisi(d.key, ki);
+      for (let t = 1; t <= maxT; t++) {
+        const v = vgSGetir(s, 'vgkz_' + d.key + '_' + ki + '_' + t);
+        vd += +v.d || 0; vy += +v.y || 0; vb += +v.b || 0;
+      }
+      if (s && s.vg && s.vg['vgkbitti_' + d.key + '_' + ki] === '1') tamam++;
+    });
+    const sd = (sb[d.key] || {}).d || 0, sy = (sb[d.key] || {}).y || 0;
+    const vgSoru = vd + vy + vb, sbSoru = sd + sy;
+    const toplamSoru = vgSoru + sbSoru;
+    const net = (vd + sd) - (vy + sy) / 4;
+    const oran = toplamSoru ? Math.round(net / toplamSoru * 100) : null;
+    return { key: d.key, ad: d.sinav + ' ' + d.ad, sinav: d.sinav, toplamKonu: d.kazanimlar.length, tamam,
+             vgSoru, sbSoru, toplamSoru, net, oran };
+  });
+}
+function dbDersBasarisiHtml(s) {
+  const liste = dbDersBasariHesapla(s);
+  const renkOf = o => o === null ? 'var(--text3)' : o >= 75 ? 'var(--green)' : o >= 50 ? 'var(--accent)' : 'var(--red)';
+  const netFmt = n => (Math.round(n * 100) / 100).toLocaleString('tr-TR', { maximumFractionDigits: 2 });
+  let out = '<div class="pmeta" style="margin-bottom:10px;line-height:1.45;">Başarı oranı = toplam net ÷ toplam çözülen soru (doğru + yanlış + boş). Çözülen soru = Veri Girişi (konu testleri) + Soru Bankası.</div>';
+  ['TYT', 'AYT', 'YDT'].forEach(sinav => {
+    const grup = liste.filter(x => x.sinav === sinav);
+    if (!grup.length) return;
+    out += `<div style="font-weight:800;font-size:0.86rem;margin:14px 0 8px;">${sinav}</div>`;
+    out += grup.map(x => `
+      <div class="panel-list-item" style="align-items:center;gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div class="pname">${x.ad}</div>
+          <div style="font-size:0.82rem;margin-top:3px;"><b>${x.tamam}/${x.toplamKonu}</b> konu tamamlandı · başarı oranı <b style="color:${renkOf(x.oran)};">${x.oran === null ? '—' : (x.oran < 0 ? '-%' + Math.abs(x.oran) : '%' + x.oran)}</b></div>
+          <div class="pmeta" style="margin-top:2px;">${x.toplamSoru ? `${x.toplamSoru} soru (Veri Girişi ${x.vgSoru} + Soru Bankası ${x.sbSoru}) · ${netFmt(x.net)} net` : 'Henüz soru çözülmemiş'}</div>
+        </div>
+      </div>`).join('');
+  });
+  return out;
+}
+
 // ---------- 3) ÖĞRENCİ ANALİZ ----------
 function renderAnaliz(o) {
   const btn = (key, label, color) => `
@@ -1857,36 +1912,15 @@ function renderAnaliz(o) {
     });
     html += rows || `<div class="pmeta">Henüz girilmiş ${isAyt ? 'AYT' : 'TYT'} deneme sonucu yok.</div>`;
   } else if (tv.analiz === 'dersBasarisi') {
-    // Eskiden "Dersler" ve "Ders Başarısı" diye iki ayrı, birbirine çok benzeyen sekme
-    // vardı (biri konu tamamlama + soru sayısını, diğeri net/soru yüzdesini listeliyordu).
-    // Tek bir sade özete birleştirildi: kaç dersten kaçının tamamlandığı ve genel
-    // ders başarı yüzdesi (toplam net / toplam soru) tek satırda gösteriliyor.
-    let toplamDers = 0, tamamlananDers = 0, toplamDd = 0, toplamYy = 0, toplamBb = 0;
-    vgTumDersler().forEach(d => {
-      const toplamKonu = d.kazanimlar.length;
-      let calisilan = 0, dd = 0, yy = 0, bb = 0;
-      d.kazanimlar.forEach((_, ki) => {
-        const maxT = vgKonuTestSayisi(d.key, ki);
-        for (let t = 1; t <= maxT; t++) {
-          const v = vgSGetir(s, 'vgkz_' + d.key + '_' + ki + '_' + t);
-          dd += +v.d || 0; yy += +v.y || 0; bb += +v.b || 0;
-        }
-        if (s.vg && s.vg['vgkbitti_' + d.key + '_' + ki] === '1') calisilan++;
-      });
-      toplamDers++;
-      if (toplamKonu && calisilan === toplamKonu) tamamlananDers++;
-      toplamDd += dd; toplamYy += yy; toplamBb += bb;
-    });
-    const toplamSoru = toplamDd + toplamYy + toplamBb;
-    const basari = toplamSoru ? Math.max(0, Math.round((toplamDd - toplamYy / 4) / toplamSoru * 100)) : null;
-    const renk = basari === null ? 'var(--text3)' : basari >= 75 ? 'var(--green)' : basari >= 50 ? 'var(--accent)' : 'var(--red)';
-    html += `
-      <div class="panel-list-item">
-        <div>
-          <div class="pname">${tamamlananDers}/${toplamDers} ders tamamlandı</div>
-        </div>
-        <div style="font-weight:800;font-size:1.05rem;color:${renk};">${basari === null ? '—' : '%' + basari}</div>
-      </div>`;
+    // Ders Başarısı (rehber öğretmen): her ders "TYT Türkçe", "AYT Fizik" gibi sınav ön adıyla,
+    // TYT → AYT → YDT sırasıyla listelenir. Her satırda:
+    //   • tamamlanan konu / toplam konu (Veri Girişi'nde "konu bitti" işaretlenenler — vgkbitti_)
+    //   • ders başarı oranı = toplam net / toplam çözülen soru (doğru + yanlış + boş)
+    //     toplam çözülen soru = Veri Girişi'nde o dersin konu testlerine girilen soru (vgkz_)
+    //                         + Soru Bankası'nda o dersten cevaplanan soru
+    //     net = doğru − yanlış/4 (Soru Bankası'nda boş yoktur: cevap ya doğru ya yanlıştır)
+    // Denemeler kasıtlı olarak dahil değildir (Başarı Analizim'deki "Toplam Soru" ile aynı kural).
+    html += dbDersBasarisiHtml(s);
   } else if (tv.analiz === 'aylikRapor') {
     // Aylık Rapor: Veri Girişi'nde her test kutusuna kaydedilen son düzenleme
     // tarihine (ts) göre aylara dağılım — o ay hangi dersten hangi konudan
@@ -3634,15 +3668,90 @@ let vgState = { menu: null, sinav: null, ders: null, bransTest: null };
 
 // ============================================================
 //  SORU KAVANOZU
+//  Kayıtlar (Soru Bankası'ndan işaretlenen sorular + kamerayla çekilen fotoğraflar) DERS ve KONUYA
+//  göre düzenlenir. Sorunun dersi/konusu sorunun kendisinden (SORULAR) okunur; fotoğrafa ders/konu
+//  çekimden sonra "Konuya Ekle" ile (ya da sonradan inceleme ekranından) atanır:
+//  state.kavanoz.fotograflar[i] = { id, dataUrl, tarih, ders?: VG_DERSLER anahtarı, konu?: kazanım adı }.
+//  Ders/konu listesi ve konu sırası Veri Girişi ile aynı kaynaktan (VG_DERSLER) gelir.
+//  "Soruları Tekrar Et": dersler → konular (müfredat sırasıyla) → o konunun kayıtları. Kaydı olmayan
+//  ders/konu GÖSTERİLMEZ. Konusu seçilmemiş fotoğraflar ayrı bir bölümde durur (kaybolmaz).
 // ============================================================
-let kavanozUI = { view: null, tekrarIndex: 0 };
+let kavanozUI = { view: null, tekrarIndex: 0, tDers: null, tKonu: null, fotoId: null, secSinav: null, secDers: null, donus: null, mesaj: '' };
+const KVZ_YOK = '__yok__';
+
+function kvzDersBilgi(key) {
+  for (const sinav of ['TYT', 'AYT', 'YDT']) {
+    const d = (VG_DERSLER[sinav] || []).find(x => x.key === key);
+    if (d) return { sinav, key: d.key, ad: d.ad, emoji: d.emoji || '📘', kazanimlar: d.kazanimlar || [] };
+  }
+  return null;
+}
+function kvzDersTamAd(key) {
+  const b = kvzDersBilgi(key);
+  return b ? (b.sinav + ' ' + b.ad) : key;
+}
+// Tüm kavanoz kayıtları, ders/konu bilgisiyle
+function kvzOgeler() {
+  if (!state.kavanoz) state.kavanoz = { fotograflar: [], sorular: [] };
+  const out = [];
+  state.kavanoz.sorular.forEach(s => {
+    const soru = (typeof SORULAR !== 'undefined' && SORULAR) ? SORULAR.find(q => q.id === s.soruId) : null;
+    const ders = soru && kvzDersBilgi(soru.ders) ? soru.ders : null;
+    out.push({ tip: 'soru', tarih: s.tarih, data: s, ders, konu: ders ? soru.konu : null });
+  });
+  state.kavanoz.fotograflar.forEach(f => {
+    const ders = f.ders && kvzDersBilgi(f.ders) && f.konu ? f.ders : null;
+    out.push({ tip: 'foto', tarih: f.tarih, data: f, ders, konu: ders ? f.konu : null });
+  });
+  out.sort((a, b) => new Date(a.tarih) - new Date(b.tarih));
+  return out;
+}
+// Bir dersin, kaydı olan konuları — müfredat sırasıyla (listede olmayan konular sona, alfabetik)
+function kvzKonuListesi(dersKey, ogeler) {
+  ogeler = ogeler || kvzOgeler();
+  const b = kvzDersBilgi(dersKey);
+  const sayac = {};
+  ogeler.forEach(o => { if (o.ders === dersKey) sayac[o.konu] = (sayac[o.konu] || 0) + 1; });
+  const sirali = (b ? b.kazanimlar : []).filter(k => sayac[k]);
+  const digerleri = Object.keys(sayac).filter(k => sirali.indexOf(k) === -1).sort((a, c) => a.localeCompare(c, 'tr'));
+  return sirali.concat(digerleri);
+}
+// Şu an açık olan (tDers/tKonu) gruptaki kayıtlar
+function kavanozListesi() {
+  const ogeler = kvzOgeler();
+  if (kavanozUI.tDers === KVZ_YOK) return ogeler.filter(o => !o.ders);
+  if (kavanozUI.tDers && kavanozUI.tKonu !== null) return ogeler.filter(o => o.ders === kavanozUI.tDers && o.konu === kavanozUI.tKonu);
+  return ogeler;
+}
+
+function kvzCerceve(baslik, geriFn, icHtml) {
+  return `
+  <div class="fade-up" style="max-width:480px;margin:0 auto;">
+    <div style="position:relative;border-radius:22px;overflow:hidden;padding:18px 16px 24px;background:radial-gradient(circle at 20% 10%,rgba(212,169,80,0.18),transparent 45%),linear-gradient(160deg,#faf6ec,#f0e8d4 60%,#ece2c8);border:1px solid rgba(180,140,60,0.3);box-shadow:0 8px 22px rgba(120,90,30,0.15);">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <button onclick="${geriFn}" style="background:none;border:none;cursor:pointer;padding:0;display:flex;flex-shrink:0;"><img src="${GERI_TUS_ICON}" style="width:32px;height:32px;"></button>
+        <div style="font-family:'Playfair Display',serif;font-size:1.25rem;font-weight:900;color:#3a2a15;line-height:1.2;">${baslik}</div>
+      </div>
+      ${icHtml}
+    </div>
+  </div>`;
+}
+const KVZ_KART = 'cursor:pointer;display:flex;align-items:center;gap:12px;background:rgba(255,253,247,0.92);border:1px solid rgba(180,140,60,0.35);border-radius:14px;padding:13px 14px;margin-bottom:8px;box-shadow:0 3px 10px rgba(120,90,30,0.08);';
+function kvzSayiMetni(liste) {
+  const s = liste.filter(o => o.tip === 'soru').length, f = liste.filter(o => o.tip === 'foto').length;
+  return [s ? s + ' soru' : '', f ? f + ' fotoğraf' : ''].filter(Boolean).join(' · ');
+}
 
 function renderSoruKavanozu(el) {
   if (!state.kavanoz) state.kavanoz = { fotograflar: [], sorular: [] };
   if (kavanozUI.view === 'tekrar') { renderKavanozTekrar(el); return; }
+  if (kavanozUI.view === 'fotoTamam') { el.innerHTML = kvzFotoTamamHtml(); return; }
+  if (kavanozUI.view === 'konuSec') { el.innerHTML = kvzKonuSecHtml(); return; }
 
   const fotoSayisi = state.kavanoz.fotograflar.length;
   const soruSayisi = state.kavanoz.sorular.length;
+  const konusuz = state.kavanoz.fotograflar.filter(f => !(f.ders && f.konu)).length;
+  const mesaj = kavanozUI.mesaj; kavanozUI.mesaj = '';
 
   el.innerHTML = `
   <div class="fade-up" style="max-width:480px;margin:0 auto;">
@@ -3651,28 +3760,117 @@ function renderSoruKavanozu(el) {
         <button onclick="switchToTab('dashboard')" style="background:none;border:none;cursor:pointer;padding:0;display:flex;flex-shrink:0;"><img src="${GERI_TUS_ICON}" style="width:32px;height:32px;"></button>
         <div style="font-family:'Playfair Display',serif;font-size:1.4rem;font-weight:900;color:#3a2a15;">🏺 Soru Kavanozu</div>
       </div>
+      ${mesaj ? `<div style="background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;border-radius:12px;padding:10px 12px;font-size:0.82rem;font-weight:700;margin-bottom:14px;">${mesaj}</div>` : ''}
       <div style="text-align:center;margin-bottom:22px;">
         <img src="${PUSULA_ICONS.soruKavanozu}" style="width:100%;max-width:200px;border-radius:16px;box-shadow:0 8px 22px rgba(120,90,30,0.3);border:1px solid rgba(180,140,60,0.35);">
       </div>
       <div style="display:flex;flex-direction:column;gap:12px;">
-        <label for="kavanozCameraInput" style="display:flex;align-items:center;gap:14px;padding:16px;border-radius:16px;border:1px solid rgba(180,140,60,0.4);background:linear-gradient(160deg,#fffdf7,#f7f0dd);cursor:pointer;text-align:left;box-shadow:0 3px 10px rgba(120,90,30,0.12);">
+        <label for="kavanozCameraInput" style="display:flex;align-items:center;gap:14px;padding:16px;border-radius:16px;border:1px solid rgba(180,140,60,0.4);background:linear-gradient(160deg,#fffdf7,#f7f0dd);cursor:pointer;text-align:left;box-shadow:0 3px 10px rgba(120,90,30,0.1);">
           <div style="font-size:1.7rem;">📷</div>
           <div>
             <div style="font-weight:800;font-size:0.95rem;color:#3a2a15;">Soru Ekle</div>
-            <div style="font-size:0.76rem;color:#6b5636;margin-top:2px;">Kamerayla fotoğraf çek, kavanoza kaydet</div>
+            <div style="font-size:0.76rem;color:#6b5636;margin-top:2px;">Kamerayla fotoğraf çek, konusunu seç, kavanoza kaydet</div>
           </div>
         </label>
-        <button onclick="kavanozTekrarBaslat()" style="display:flex;align-items:center;gap:14px;padding:16px;border-radius:16px;border:1px solid rgba(180,140,60,0.4);background:linear-gradient(160deg,#fffdf7,#f7f0dd);cursor:pointer;text-align:left;box-shadow:0 3px 10px rgba(120,90,30,0.12);">
+        <button onclick="kavanozTekrarBaslat()" style="display:flex;align-items:center;gap:14px;padding:16px;border-radius:16px;border:1px solid rgba(180,140,60,0.4);background:linear-gradient(160deg,#fffdf7,#f7f0dd);cursor:pointer;text-align:left;box-shadow:0 3px 10px rgba(120,90,30,0.1);">
           <div style="font-size:1.7rem;">🔁</div>
           <div>
             <div style="font-weight:800;font-size:0.95rem;color:#3a2a15;">Soruları Tekrar Et</div>
-            <div style="font-size:0.76rem;color:#6b5636;margin-top:2px;">${fotoSayisi + soruSayisi} kayıt (${soruSayisi} soru, ${fotoSayisi} fotoğraf)</div>
+            <div style="font-size:0.76rem;color:#6b5636;margin-top:2px;">${fotoSayisi + soruSayisi} kayıt (${soruSayisi} soru, ${fotoSayisi} fotoğraf) · derslere ve konulara göre</div>
+            ${konusuz ? `<div style="font-size:0.7rem;color:#b45309;margin-top:3px;font-weight:700;">📷 ${konusuz} fotoğrafın konusu seçilmemiş</div>` : ''}
           </div>
         </button>
       </div>
       <input autocomplete="off" type="file" accept="image/*" capture="environment" id="kavanozCameraInput" style="position:fixed;top:-999px;left:-999px;width:1px;height:1px;opacity:0;" onchange="kavanozFotoSecildi(this)">
     </div>
   </div>`;
+}
+
+// ── Çekim tamamlandı ekranı ──────────────────────────────────
+function kvzFotoBul(id) { return (state.kavanoz.fotograflar || []).find(f => f.id === id); }
+function kvzFotoTamamHtml() {
+  const f = kvzFotoBul(kavanozUI.fotoId);
+  if (!f) { kavanozUI.view = null; return ''; }
+  const ic = `
+    <div style="text-align:center;font-weight:800;color:#166534;font-size:0.95rem;margin-bottom:10px;">✅ Fotoğraf kavanoza kaydedildi</div>
+    <img src="${f.dataUrl}" style="width:100%;max-height:320px;object-fit:contain;border-radius:14px;background:#fff;box-shadow:0 6px 18px rgba(120,90,30,0.2);margin-bottom:14px;">
+    <div style="font-size:0.8rem;color:#6b5636;text-align:center;margin-bottom:12px;line-height:1.45;">Sorunun hangi derse ve konuya ait olduğunu seç; "Soruları Tekrar Et"te o konunun altında görünsün.</div>
+    <button onclick="kvzKonuSecAc('${f.id}','ana')" style="width:100%;padding:14px;border:none;border-radius:14px;background:linear-gradient(135deg,#16a34a,#4ade80);color:#06280f;font-weight:900;font-size:0.95rem;cursor:pointer;box-shadow:0 4px 12px rgba(22,163,74,0.3);margin-bottom:8px;">📚 Konuya Ekle</button>
+    <button onclick="kavanozGeriDon()" style="width:100%;padding:12px;border-radius:12px;border:1px solid rgba(180,140,60,0.4);background:#fdfaf1;color:#3a2a15;font-weight:700;font-size:0.86rem;cursor:pointer;">Daha Sonra</button>`;
+  return kvzCerceve('📷 Çekim Tamamlandı', 'kavanozGeriDon()', ic);
+}
+
+// ── Ders / konu seçici (TYT/AYT/YDT → ders → konu) ─────────────
+function kvzKonuSecAc(fotoId, donus) {
+  kavanozUI.view = 'konuSec'; kavanozUI.fotoId = fotoId; kavanozUI.donus = donus || 'ana';
+  kavanozUI.secSinav = null; kavanozUI.secDers = null;
+  renderSoruKavanozu(document.getElementById('mainContent'));
+}
+function kvzSecSinav(s) { kavanozUI.secSinav = s; kavanozUI.secDers = null; renderSoruKavanozu(document.getElementById('mainContent')); }
+function kvzSecDers(k) { kavanozUI.secDers = k; renderSoruKavanozu(document.getElementById('mainContent')); }
+function kvzSecGeri() {
+  if (kavanozUI.secDers) kavanozUI.secDers = null;
+  else if (kavanozUI.secSinav) kavanozUI.secSinav = null;
+  else { kvzSecIptal(); return; }
+  renderSoruKavanozu(document.getElementById('mainContent'));
+}
+function kvzSecIptal() {
+  if (kavanozUI.donus === 'tekrar') { kavanozUI.view = 'tekrar'; }
+  else if (kavanozUI.donus === 'ana') { kavanozUI.view = kvzFotoBul(kavanozUI.fotoId) ? 'fotoTamam' : null; }
+  renderSoruKavanozu(document.getElementById('mainContent'));
+}
+function kvzKonuSecHtml() {
+  const f = kvzFotoBul(kavanozUI.fotoId);
+  if (!f) { kavanozUI.view = null; return ''; }
+  const onizleme = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><img src="${f.dataUrl}" style="width:54px;height:54px;object-fit:cover;border-radius:10px;border:1px solid rgba(180,140,60,0.4);"><div style="font-size:0.78rem;color:#6b5636;">${f.ders && f.konu ? 'Şu anki konu: <b>' + kvzDersTamAd(f.ders) + ' › ' + f.konu + '</b>' : 'Bu fotoğraf için ders ve konu seç.'}</div></div>`;
+  if (kavanozUI.secDers) {
+    const b = kvzDersBilgi(kavanozUI.secDers);
+    const satirlar = b.kazanimlar.map((k, i) => `
+      <div onclick="kvzKonuyaKaydet(${i})" style="${KVZ_KART}padding:11px 12px;">
+        <span style="flex-shrink:0;min-width:24px;height:24px;padding:0 6px;border-radius:12px;background:linear-gradient(135deg,#d4af5a,#8a6a2f);color:#241c0e;font-size:0.72rem;font-weight:900;display:flex;align-items:center;justify-content:center;">${i + 1}</span>
+        <span style="flex:1;font-weight:700;font-size:0.84rem;color:#3a2a15;">${k}</span>
+        <span style="color:#16a34a;font-weight:900;">＋</span>
+      </div>`).join('');
+    return kvzCerceve('📚 ' + b.sinav + ' ' + b.ad + ' — Konu Seç', 'kvzSecGeri()', onizleme + satirlar);
+  }
+  if (kavanozUI.secSinav) {
+    const dersler = VG_DERSLER[kavanozUI.secSinav] || [];
+    const kartlar = dersler.map(d => `
+      <div onclick="kvzSecDers('${d.key}')" style="cursor:pointer;background:rgba(255,253,247,0.95);border:1px solid rgba(180,140,60,0.4);border-radius:14px;padding:14px 8px;text-align:center;box-shadow:0 3px 8px rgba(120,90,30,0.12);">
+        <div style="font-size:1.4rem;margin-bottom:4px;">${d.emoji || '📘'}</div>
+        <div style="font-weight:800;font-size:0.84rem;color:#3a2a15;">${d.ad}</div>
+      </div>`).join('');
+    return kvzCerceve('📚 ' + kavanozUI.secSinav + ' — Ders Seç', 'kvzSecGeri()', onizleme + `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">${kartlar}</div>`);
+  }
+  const sinavlar = [
+    { t: 'TYT', e: '📘', r: 'linear-gradient(160deg,#3a5a86,#2c4566)' },
+    { t: 'AYT', e: '📗', r: 'linear-gradient(160deg,#2d6e56,#1f5442)' },
+    { t: 'YDT', e: '🇬🇧', r: 'linear-gradient(160deg,#8a4a2f,#6b3520)' }
+  ];
+  const kartlar = sinavlar.map(s => `
+    <div onclick="kvzSecSinav('${s.t}')" style="cursor:pointer;background:${s.r};border-radius:16px;padding:18px 8px;text-align:center;color:#fff;box-shadow:0 4px 12px rgba(0,0,0,0.2);">
+      <div style="font-size:1.7rem;margin-bottom:4px;">${s.e}</div><div style="font-weight:900;font-size:1.05rem;">${s.t}</div>
+    </div>`).join('');
+  return kvzCerceve('📚 Konuya Ekle', 'kvzSecGeri()', onizleme + `<div style="font-size:0.78rem;color:#6b5636;margin-bottom:10px;">Önce sınavı seç.</div><div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">${kartlar}</div>`);
+}
+function kvzKonuyaKaydet(konuIdx) {
+  const f = kvzFotoBul(kavanozUI.fotoId);
+  const b = kvzDersBilgi(kavanozUI.secDers);
+  if (!f || !b || !b.kazanimlar[konuIdx]) return;
+  f.ders = b.key; f.konu = b.kazanimlar[konuIdx];
+  kavanozFotoLocalKaydet(currentUser ? currentUser.id : 'misafir', state.kavanoz.fotograflar);
+  saveState();
+  const msg = '✅ Fotoğraf "' + b.sinav + ' ' + b.ad + ' › ' + f.konu + '" konusuna eklendi.';
+  if (kavanozUI.donus === 'tekrar') {
+    // İnceleme ekranından değiştirildiyse: fotoğrafın yeni konusunu aç
+    kavanozUI.view = 'tekrar'; kavanozUI.tDers = f.ders; kavanozUI.tKonu = f.konu;
+    kavanozUI.tekrarIndex = Math.max(0, kavanozListesi().findIndex(o => o.tip === 'foto' && o.data.id === f.id));
+    kavanozUI.mesaj = msg;
+  } else {
+    kavanozUI.view = null; kavanozUI.mesaj = msg;
+  }
+  kavanozUI.secSinav = null; kavanozUI.secDers = null;
+  renderSoruKavanozu(document.getElementById('mainContent'));
 }
 
 function kavanozAcCamera() {
@@ -3728,8 +3926,9 @@ function kavanozFotoSecildi(inputEl) {
     const simdi = new Date();
     const kucultulmus = await kavanozFotoSikistir(e.target.result, 1280, 0.72);
     const id = currentUser ? currentUser.id : 'misafir';
+    const yeniFotoId = 'kf' + Date.now() + Math.random().toString(36).slice(2,7);
     state.kavanoz.fotograflar.push({
-      id: 'kf' + Date.now() + Math.random().toString(36).slice(2,7),
+      id: yeniFotoId,
       dataUrl: kucultulmus,
       tarih: simdi.toISOString()
     });
@@ -3742,6 +3941,9 @@ function kavanozFotoSecildi(inputEl) {
     if (!kaydedildi) {
       state.kavanoz.fotograflar.pop();
       alert('Fotoğraf kaydedilemedi: Cihazın depolama alanı dolu olabilir. Lütfen Soru Kavanozu\'ndaki eski fotoğraflardan bazılarını sil ve tekrar dene.');
+    } else {
+      // Çekim tamamlandı: önizleme + "Konuya Ekle" ekranı
+      kavanozUI.view = 'fotoTamam'; kavanozUI.fotoId = yeniFotoId;
     }
     renderSoruKavanozu(document.getElementById('mainContent'));
   };
@@ -3750,60 +3952,113 @@ function kavanozFotoSecildi(inputEl) {
 
 function kavanozTekrarBaslat() {
   kavanozUI.view = 'tekrar';
+  kavanozUI.tDers = null; kavanozUI.tKonu = null;
   kavanozUI.tekrarIndex = 0;
   renderSoruKavanozu(document.getElementById('mainContent'));
 }
-
-function kavanozListesi() {
-  if (!state.kavanoz) state.kavanoz = { fotograflar: [], sorular: [] };
-  const liste = [
-    ...state.kavanoz.fotograflar.map(f => ({ tip: 'foto', tarih: f.tarih, data: f })),
-    ...state.kavanoz.sorular.map(s => ({ tip: 'soru', tarih: s.tarih, data: s }))
-  ];
-  liste.sort((a,b) => new Date(a.tarih) - new Date(b.tarih));
-  return liste;
+function kvzTekrarDers(key) { kavanozUI.tDers = key; kavanozUI.tKonu = null; kavanozUI.tekrarIndex = 0; renderKavanozTekrar(document.getElementById('mainContent')); }
+function kvzTekrarKonu(idx) {
+  const konular = kvzKonuListesi(kavanozUI.tDers);
+  if (konular[idx] === undefined) return;
+  kavanozUI.tKonu = konular[idx]; kavanozUI.tekrarIndex = 0;
+  renderKavanozTekrar(document.getElementById('mainContent'));
+}
+function kvzTekrarGeri() {
+  if (kavanozUI.tDers && kavanozUI.tDers !== KVZ_YOK && kavanozUI.tKonu !== null) { kavanozUI.tKonu = null; }
+  else if (kavanozUI.tDers) { kavanozUI.tDers = null; kavanozUI.tKonu = null; }
+  else { kavanozGeriDon(); return; }
+  renderKavanozTekrar(document.getElementById('mainContent'));
 }
 
 function renderKavanozTekrar(el) {
-  const liste = kavanozListesi();
-  if (liste.length === 0) {
-    el.innerHTML = `
-    <div class="fade-up" style="max-width:480px;margin:0 auto;">
-      <div style="position:relative;border-radius:22px;overflow:hidden;padding:18px 16px 24px;background:radial-gradient(circle at 20% 10%,rgba(212,169,80,0.18),transparent 45%),linear-gradient(160deg,#faf6ec,#f0e8d4 60%,#ece2c8);border:1px solid rgba(180,140,60,0.3);box-shadow:0 8px 22px rgba(120,90,30,0.15);">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
-          <button onclick="kavanozGeriDon()" style="background:none;border:none;cursor:pointer;padding:0;display:flex;flex-shrink:0;"><img src="${GERI_TUS_ICON}" style="width:32px;height:32px;"></button>
-          <div style="font-family:'Playfair Display',serif;font-size:1.3rem;font-weight:900;color:#3a2a15;">🔁 Soruları Tekrar Et</div>
-        </div>
-        <div style="text-align:center;padding:40px 20px;color:#6b5636;">
-          <div style="font-size:2.4rem;margin-bottom:10px;">🏺</div>
-          Kavanozun boş. Önce "Soru Ekle" ile fotoğraf çek ya da Soru Bankası'ndan 🏺 simgesine basarak soru ekle.
-        </div>
-      </div>
-    </div>`;
+  const ogeler = kvzOgeler();
+  const mesaj = kavanozUI.mesaj; kavanozUI.mesaj = '';
+  const mesajHtml = mesaj ? `<div style="background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;border-radius:12px;padding:10px 12px;font-size:0.8rem;font-weight:700;margin-bottom:12px;">${mesaj}</div>` : '';
+  if (!ogeler.length) {
+    el.innerHTML = kvzCerceve('🔁 Soruları Tekrar Et', 'kavanozGeriDon()', `
+      <div style="text-align:center;padding:40px 20px;color:#6b5636;">
+        <div style="font-size:2.4rem;margin-bottom:10px;">🏺</div>
+        Kavanozun boş. Önce "Soru Ekle" ile fotoğraf çek ya da Soru Bankası'ndan 🏺 simgesine basarak soru ekle.
+      </div>`);
     return;
   }
+  // 1) DERSLER — yalnızca kaydı olan dersler (TYT / AYT / YDT başlıkları altında)
+  if (!kavanozUI.tDers) {
+    let html = mesajHtml + '<div style="font-size:0.78rem;color:#6b5636;margin-bottom:10px;">Tekrar etmek istediğin dersi seç. Sadece kaydın olan dersler gösterilir.</div>';
+    ['TYT', 'AYT', 'YDT'].forEach(sinav => {
+      const dersler = (VG_DERSLER[sinav] || []).map(d => ({ d, liste: ogeler.filter(o => o.ders === d.key) })).filter(x => x.liste.length);
+      if (!dersler.length) return;
+      html += `<div style="font-weight:900;font-size:0.86rem;color:#3a2a15;margin:12px 0 8px;display:flex;align-items:center;gap:8px;"><span style="width:4px;height:16px;background:linear-gradient(180deg,#d4af5a,#8a6a2f);border-radius:2px;"></span>${sinav}</div>`;
+      html += dersler.map(({ d, liste }) => `
+        <div onclick="kvzTekrarDers('${d.key}')" style="${KVZ_KART}">
+          <div style="font-size:1.5rem;">${d.emoji || '📘'}</div>
+          <div style="flex:1;"><div style="font-weight:800;font-size:0.9rem;color:#3a2a15;">${d.ad}</div>
+            <div style="font-size:0.72rem;color:#6b5636;margin-top:2px;">${kvzKonuListesi(d.key, ogeler).length} konu · ${kvzSayiMetni(liste)}</div></div>
+          <div style="color:#b8903f;font-size:1.2rem;">›</div>
+        </div>`).join('');
+    });
+    const konusuz = ogeler.filter(o => !o.ders);
+    if (konusuz.length) {
+      html += `<div style="font-weight:900;font-size:0.86rem;color:#3a2a15;margin:14px 0 8px;">Konusu seçilmemiş</div>
+        <div onclick="kvzTekrarDers('${KVZ_YOK}')" style="${KVZ_KART}border-style:dashed;">
+          <div style="font-size:1.5rem;">📷</div>
+          <div style="flex:1;"><div style="font-weight:800;font-size:0.9rem;color:#3a2a15;">Konusu seçilmemiş kayıtlar</div>
+            <div style="font-size:0.72rem;color:#b45309;margin-top:2px;">${kvzSayiMetni(konusuz)} · açıp "Konuya Ekle" ile yerleştirebilirsin</div></div>
+          <div style="color:#b8903f;font-size:1.2rem;">›</div>
+        </div>`;
+    }
+    el.innerHTML = kvzCerceve('🔁 Soruları Tekrar Et', 'kvzTekrarGeri()', html);
+    return;
+  }
+  // 2) KONULAR — seçilen dersin yalnızca kaydı olan konuları, müfredat sırasıyla
+  if (kavanozUI.tDers !== KVZ_YOK && kavanozUI.tKonu === null) {
+    const b = kvzDersBilgi(kavanozUI.tDers);
+    const konular = kvzKonuListesi(kavanozUI.tDers, ogeler);
+    if (!konular.length) { kavanozUI.tDers = null; renderKavanozTekrar(el); return; }
+    const sira = k => { const i = b ? b.kazanimlar.indexOf(k) : -1; return i >= 0 ? (i + 1) : '•'; };
+    const html = mesajHtml + konular.map((k, i) => {
+      const liste = ogeler.filter(o => o.ders === kavanozUI.tDers && o.konu === k);
+      return `
+        <div onclick="kvzTekrarKonu(${i})" style="${KVZ_KART}">
+          <span style="flex-shrink:0;min-width:26px;height:26px;padding:0 6px;border-radius:13px;background:linear-gradient(135deg,#d4af5a,#8a6a2f);color:#241c0e;font-size:0.74rem;font-weight:900;display:flex;align-items:center;justify-content:center;">${sira(k)}</span>
+          <div style="flex:1;"><div style="font-weight:800;font-size:0.86rem;color:#3a2a15;line-height:1.3;">${k}</div>
+            <div style="font-size:0.72rem;color:#6b5636;margin-top:2px;">${kvzSayiMetni(liste)}</div></div>
+          <div style="color:#b8903f;font-size:1.2rem;">›</div>
+        </div>`;
+    }).join('');
+    el.innerHTML = kvzCerceve('🔁 ' + (b ? b.sinav + ' ' + b.ad : ''), 'kvzTekrarGeri()', html);
+    return;
+  }
+  // 3) KAYITLAR — seçilen konunun (ya da konusuz bölümün) soruları ve fotoğrafları
+  const liste = kavanozListesi();
+  if (!liste.length) { kavanozUI.tKonu = null; if (kavanozUI.tDers === KVZ_YOK) kavanozUI.tDers = null; renderKavanozTekrar(el); return; }
   if (kavanozUI.tekrarIndex >= liste.length) kavanozUI.tekrarIndex = liste.length - 1;
   if (kavanozUI.tekrarIndex < 0) kavanozUI.tekrarIndex = 0;
   const item = liste[kavanozUI.tekrarIndex];
   const tarihStr = new Date(item.tarih).toLocaleDateString('tr-TR', { day:'2-digit', month:'long', year:'numeric' });
+  const baslik = kavanozUI.tDers === KVZ_YOK ? '📷 Konusu Seçilmemiş' : '🔁 ' + kavanozUI.tKonu;
+  const yol = kavanozUI.tDers === KVZ_YOK ? '' : `<div style="font-size:0.72rem;font-weight:800;color:#8a6a2f;margin-bottom:4px;">${kvzDersTamAd(kavanozUI.tDers)} › ${kavanozUI.tKonu}</div>`;
 
   let contentHtml = '';
   if (item.tip === 'foto') {
+    const konuVar = !!item.ders;
     contentHtml = `
       <img src="${item.data.dataUrl}" style="width:100%;border-radius:14px;box-shadow:0 6px 18px rgba(120,90,30,0.2);">
-      <button onclick="kavanozOgeSil('foto','${item.data.id}')" style="margin-top:12px;width:100%;padding:10px;border-radius:10px;border:1px solid #b91c1c;background:transparent;color:#b91c1c;font-weight:700;cursor:pointer;">🗑️ Kavanozdan Çıkar</button>`;
+      <button onclick="kvzKonuSecAc('${item.data.id}','tekrar')" style="margin-top:12px;width:100%;padding:11px;border-radius:10px;border:none;background:${konuVar ? 'rgba(180,140,60,0.18)' : 'linear-gradient(135deg,#16a34a,#4ade80)'};color:${konuVar ? '#3a2a15' : '#06280f'};font-weight:800;cursor:pointer;">📚 ${konuVar ? 'Konuyu Değiştir' : 'Konuya Ekle'}</button>
+      <button onclick="kavanozOgeSil('foto','${item.data.id}')" style="margin-top:8px;width:100%;padding:10px;border-radius:10px;border:1px solid #b91c1c;background:transparent;color:#b91c1c;font-weight:700;cursor:pointer;">🗑️ Kavanozdan Çıkar</button>`;
   } else {
     const soru = SORULAR.find(s => s.id === item.data.soruId);
     if (!soru) {
-      contentHtml = `<div style="color:#6b5636;padding:20px;text-align:center;">Bu soru artık bulunamıyor.</div>`;
+      contentHtml = `<div style="color:#6b5636;padding:20px;text-align:center;">Bu soru artık bulunamıyor.</div>
+        <button onclick="kavanozOgeSil('soru','${item.data.soruId}')" style="margin-top:12px;width:100%;padding:10px;border-radius:10px;border:1px solid #b91c1c;background:transparent;color:#b91c1c;font-weight:700;cursor:pointer;">🗑️ Kavanozdan Çıkar</button>`;
     } else {
       const siklarHtml = soru.siklar.map(sik => `
-        <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:10px;border:1px solid ${sik.harf===soru.dogru?'#15803d':'rgba(180,140,60,0.3)'};background:${sik.harf===soru.dogru?'rgba(21,128,61,0.1)':'rgba(255,253,247,0.6)'};margin-bottom:8px;">
-          <span style="width:22px;height:22px;border-radius:50%;background:${sik.harf===soru.dogru?'#15803d':'rgba(180,140,60,0.25)'};color:${sik.harf===soru.dogru?'#fff':'#3a2a15'};display:flex;align-items:center;justify-content:center;font-size:0.72rem;font-weight:700;flex-shrink:0;">${sik.harf}</span>
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:10px;border:1px solid ${sik.harf===soru.dogru?'#15803d':'rgba(180,140,60,0.3)'};background:${sik.harf===soru.dogru?'rgba(21,128,61,0.1)':'rgba(255,253,247,0.6)'};margin-bottom:6px;">
+          <span style="width:22px;height:22px;border-radius:50%;background:${sik.harf===soru.dogru?'#15803d':'rgba(180,140,60,0.25)'};color:${sik.harf===soru.dogru?'#fff':'#3a2a15'};display:flex;align-items:center;justify-content:center;font-size:0.72rem;font-weight:800;flex-shrink:0;">${sik.harf}</span>
           <span style="font-size:0.85rem;color:#3a2a15;">${sik.metin}</span>
         </div>`).join('');
       contentHtml = `
-        <div style="font-size:0.72rem;font-weight:700;color:#8a6a2f;margin-bottom:6px;">${soru.konu}</div>
+        <div style="font-size:0.72rem;font-weight:700;color:#8a6a2f;margin-bottom:6px;">📝 Soru Bankası</div>
         <div style="font-size:0.9rem;line-height:1.6;margin-bottom:14px;color:#3a2a15;">${soru.metin}</div>
         <div>${siklarHtml}</div>
         <div style="margin-top:12px;padding:12px;border-radius:10px;background:rgba(255,253,247,0.75);border:1px solid rgba(180,140,60,0.25);font-size:0.82rem;line-height:1.5;color:#3a2a15;">
@@ -3812,24 +4067,16 @@ function renderKavanozTekrar(el) {
         <button onclick="kavanozOgeSil('soru','${soru.id}')" style="margin-top:12px;width:100%;padding:10px;border-radius:10px;border:1px solid #b91c1c;background:transparent;color:#b91c1c;font-weight:700;cursor:pointer;">🗑️ Kavanozdan Çıkar</button>`;
     }
   }
-
-  el.innerHTML = `
-  <div class="fade-up" style="max-width:480px;margin:0 auto;">
-    <div style="position:relative;border-radius:22px;overflow:hidden;padding:18px 16px 22px;background:radial-gradient(circle at 20% 10%,rgba(212,169,80,0.18),transparent 45%),linear-gradient(160deg,#faf6ec,#f0e8d4 60%,#ece2c8);border:1px solid rgba(180,140,60,0.3);box-shadow:0 8px 22px rgba(120,90,30,0.15);">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-        <button onclick="kavanozGeriDon()" style="background:none;border:none;cursor:pointer;padding:0;display:flex;flex-shrink:0;"><img src="${GERI_TUS_ICON}" style="width:32px;height:32px;"></button>
-        <div style="font-family:'Playfair Display',serif;font-size:1.2rem;font-weight:900;color:#3a2a15;">🔁 Soruları Tekrar Et</div>
-      </div>
-      <div style="font-size:0.75rem;color:#6b5636;margin-bottom:4px;">${tarihStr} tarihinde eklendi · ${kavanozUI.tekrarIndex+1} / ${liste.length}</div>
+  el.innerHTML = kvzCerceve(baslik, 'kvzTekrarGeri()', `
+      ${mesajHtml}${yol}
+      <div style="font-size:0.75rem;color:#6b5636;margin-bottom:6px;">${item.tip === 'foto' ? '📷 Fotoğraf' : '📝 Soru'} · ${tarihStr} tarihinde eklendi · ${kavanozUI.tekrarIndex+1} / ${liste.length}</div>
       <div style="background:rgba(255,253,247,0.75);border:1px solid rgba(180,140,60,0.3);border-radius:16px;padding:16px;margin-bottom:16px;">
         ${contentHtml}
       </div>
       <div style="display:flex;gap:10px;">
-        <button onclick="kavanozTekrarGit(-1)" ${kavanozUI.tekrarIndex===0?'disabled':''} style="flex:1;padding:12px;border-radius:12px;border:1px solid rgba(180,140,60,0.4);background:rgba(255,253,247,0.8);color:#3a2a15;font-weight:700;cursor:pointer;">← Önceki</button>
-        <button onclick="kavanozTekrarGit(1)" ${kavanozUI.tekrarIndex===liste.length-1?'disabled':''} style="flex:1;padding:12px;border-radius:12px;border:none;background:linear-gradient(135deg,#8a6a2f,#d4af5a 50%,#b8903f);color:#2b2008;font-weight:800;cursor:pointer;">Sonraki →</button>
-      </div>
-    </div>
-  </div>`;
+        <button onclick="kavanozTekrarGit(-1)" ${kavanozUI.tekrarIndex===0?'disabled':''} style="flex:1;padding:12px;border-radius:12px;border:1px solid rgba(180,140,60,0.4);background:rgba(255,253,247,0.8);color:#3a2a15;font-weight:700;cursor:pointer;${kavanozUI.tekrarIndex===0?'opacity:0.45;':''}">← Önceki</button>
+        <button onclick="kavanozTekrarGit(1)" ${kavanozUI.tekrarIndex===liste.length-1?'disabled':''} style="flex:1;padding:12px;border-radius:12px;border:none;background:linear-gradient(135deg,#8a6a2f,#d4af5a 50%,#b8903f);color:#2b2008;font-weight:800;cursor:pointer;${kavanozUI.tekrarIndex===liste.length-1?'opacity:0.45;':''}">Sonraki →</button>
+      </div>`);
 }
 
 function kavanozTekrarGit(delta) {
@@ -3848,11 +4095,12 @@ function kavanozOgeSil(tip, id) {
   saveState();
   const liste = kavanozListesi();
   if (kavanozUI.tekrarIndex >= liste.length) kavanozUI.tekrarIndex = Math.max(0, liste.length - 1);
+  // Konu boşaldıysa renderKavanozTekrar otomatik olarak bir üst seviyeye (konu/ders listesi) döner
   renderKavanozTekrar(document.getElementById('mainContent'));
 }
 
 function kavanozGeriDon() {
-  kavanozUI.view = null;
+  kavanozUI.view = null; kavanozUI.tDers = null; kavanozUI.tKonu = null;
   renderSoruKavanozu(document.getElementById('mainContent'));
 }
 
@@ -4511,6 +4759,10 @@ function switchToTab(tab) {
   // yazması varsa, başka bir sekmeye geçmeden önce hemen gönderilir — 1 saniyelik bekleme
   // sırasında sekme değiştirilirse o veri kaybolmasın diye.
   cloudFlushAllPending();
+  if (tab === 'soruKavanozu' && state.currentTab !== tab && typeof kavanozUI !== 'undefined') {
+    // Kavanoza başka bir ekrandan girilince her zaman ana sayfasından başlanır
+    Object.assign(kavanozUI, { view: null, tDers: null, tKonu: null, tekrarIndex: 0, secSinav: null, secDers: null, fotoId: null, mesaj: '' });
+  }
   if (state.currentTab && state.currentTab !== tab) {
     tabHistory.push(state.currentTab);
     if (tabHistory.length > 20) tabHistory.shift();
