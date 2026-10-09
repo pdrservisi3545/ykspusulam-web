@@ -1847,18 +1847,17 @@ function dbDersBasariHesapla(s) {
 function dbDersBasarisiHtml(s) {
   const liste = dbDersBasariHesapla(s);
   const renkOf = o => o === null ? 'var(--text3)' : o >= 75 ? 'var(--green)' : o >= 50 ? 'var(--accent)' : 'var(--red)';
-  const netFmt = n => (Math.round(n * 100) / 100).toLocaleString('tr-TR', { maximumFractionDigits: 2 });
-  let out = '<div class="pmeta" style="margin-bottom:10px;line-height:1.45;">Başarı oranı = toplam net ÷ toplam çözülen soru (doğru + yanlış + boş). Çözülen soru = Veri Girişi (konu testleri) + Soru Bankası.</div>';
+  let out = '';
   ['TYT', 'AYT', 'YDT'].forEach(sinav => {
     const grup = liste.filter(x => x.sinav === sinav);
     if (!grup.length) return;
-    out += `<div style="font-weight:800;font-size:0.86rem;margin:14px 0 8px;">${sinav}</div>`;
+    out += `<div style="font-weight:800;font-size:0.86rem;margin:${out ? 14 : 0}px 0 8px;">${sinav}</div>`;
     out += grup.map(x => `
       <div class="panel-list-item" style="align-items:center;gap:10px;">
         <div style="flex:1;min-width:0;">
           <div class="pname">${x.ad}</div>
           <div style="font-size:0.82rem;margin-top:3px;"><b>${x.tamam}/${x.toplamKonu}</b> konu tamamlandı · başarı oranı <b style="color:${renkOf(x.oran)};">${x.oran === null ? '—' : (x.oran < 0 ? '-%' + Math.abs(x.oran) : '%' + x.oran)}</b></div>
-          <div class="pmeta" style="margin-top:2px;">${x.toplamSoru ? `${x.toplamSoru} soru (Veri Girişi ${x.vgSoru} + Soru Bankası ${x.sbSoru}) · ${netFmt(x.net)} net` : 'Henüz soru çözülmemiş'}</div>
+          <div class="pmeta" style="margin-top:2px;">${x.toplamSoru} soru</div>
         </div>
       </div>`).join('');
   });
@@ -3791,12 +3790,12 @@ function kvzFotoBul(id) { return (state.kavanoz.fotograflar || []).find(f => f.i
 function kvzFotoTamamHtml() {
   const f = kvzFotoBul(kavanozUI.fotoId);
   if (!f) { kavanozUI.view = null; return ''; }
+  // "Konuya Ekle" ekranın EN ÜSTÜNDE — kaydırmadan hemen basılabilsin; önizleme altta.
   const ic = `
-    <div style="text-align:center;font-weight:800;color:#166534;font-size:0.95rem;margin-bottom:10px;">✅ Fotoğraf kavanoza kaydedildi</div>
-    <img src="${f.dataUrl}" style="width:100%;max-height:320px;object-fit:contain;border-radius:14px;background:#fff;box-shadow:0 6px 18px rgba(120,90,30,0.2);margin-bottom:14px;">
-    <div style="font-size:0.8rem;color:#6b5636;text-align:center;margin-bottom:12px;line-height:1.45;">Sorunun hangi derse ve konuya ait olduğunu seç; "Soruları Tekrar Et"te o konunun altında görünsün.</div>
-    <button onclick="kvzKonuSecAc('${f.id}','ana')" style="width:100%;padding:14px;border:none;border-radius:14px;background:linear-gradient(135deg,#16a34a,#4ade80);color:#06280f;font-weight:900;font-size:0.95rem;cursor:pointer;box-shadow:0 4px 12px rgba(22,163,74,0.3);margin-bottom:8px;">📚 Konuya Ekle</button>
-    <button onclick="kavanozGeriDon()" style="width:100%;padding:12px;border-radius:12px;border:1px solid rgba(180,140,60,0.4);background:#fdfaf1;color:#3a2a15;font-weight:700;font-size:0.86rem;cursor:pointer;">Daha Sonra</button>`;
+    <div style="text-align:center;font-weight:800;color:#166534;font-size:0.92rem;margin-bottom:10px;">✅ Fotoğraf kavanoza kaydedildi</div>
+    <button onclick="kvzKonuSecAc('${f.id}','ana')" style="width:100%;padding:16px;border:none;border-radius:14px;background:linear-gradient(135deg,#16a34a,#4ade80);color:#06280f;font-weight:900;font-size:1rem;cursor:pointer;box-shadow:0 4px 12px rgba(22,163,74,0.3);margin-bottom:8px;">📚 Konuya Ekle</button>
+    <button onclick="kavanozGeriDon()" style="width:100%;padding:11px;border-radius:12px;border:1px solid rgba(180,140,60,0.4);background:#fdfaf1;color:#3a2a15;font-weight:700;font-size:0.84rem;cursor:pointer;margin-bottom:12px;">Daha Sonra</button>
+    <img src="${f.dataUrl}" style="width:100%;max-height:260px;object-fit:contain;border-radius:14px;background:#fff;box-shadow:0 6px 18px rgba(120,90,30,0.2);">`;
   return kvzCerceve('📷 Çekim Tamamlandı', 'kavanozGeriDon()', ic);
 }
 
@@ -3805,6 +3804,7 @@ function kvzKonuSecAc(fotoId, donus) {
   kavanozUI.view = 'konuSec'; kavanozUI.fotoId = fotoId; kavanozUI.donus = donus || 'ana';
   kavanozUI.secSinav = null; kavanozUI.secDers = null;
   renderSoruKavanozu(document.getElementById('mainContent'));
+  try { window.scrollTo(0, 0); } catch (e) {}
 }
 function kvzSecSinav(s) { kavanozUI.secSinav = s; kavanozUI.secDers = null; renderSoruKavanozu(document.getElementById('mainContent')); }
 function kvzSecDers(k) { kavanozUI.secDers = k; renderSoruKavanozu(document.getElementById('mainContent')); }
@@ -3946,6 +3946,8 @@ function kavanozFotoSecildi(inputEl) {
       kavanozUI.view = 'fotoTamam'; kavanozUI.fotoId = yeniFotoId;
     }
     renderSoruKavanozu(document.getElementById('mainContent'));
+    // Kameradan dönünce sayfa ortada kalmasın: "Konuya Ekle" ekranın başında görünsün
+    try { window.scrollTo(0, 0); } catch (e) {}
   };
   reader.readAsDataURL(file);
 }
