@@ -1851,7 +1851,10 @@ function baRenderKonuGrafikEkrani(el) {
     if (toplam > 0) {
       const net = d - y / 4;
       const pct = Math.round((net / toplam) * 100);
-      noktalar.push({ etiket: 'T' + t, deger: pct });
+      // Testin girildiği (son kaydedildiği) tarih: gg.aa — eski kayıtlarda ts yoksa tarih gösterilmez
+      let tarih = '';
+      if (s.ts) { const dt = new Date(s.ts); if (!isNaN(dt)) tarih = String(dt.getDate()).padStart(2,'0') + '.' + String(dt.getMonth()+1).padStart(2,'0'); }
+      noktalar.push({ etiket: 'T' + t, deger: pct, tarih });
     }
   }
   el.innerHTML = `
@@ -1980,8 +1983,9 @@ function baRenderComboChart(noktalar, zoomKey, tikFn, birim) {
   const zoom = baComboZoom[zoomKey] || 1;
   const genislikBirim = 40 * zoom;
   const w = Math.max(280, noktalar.length * genislikBirim);
-  const h = 160;
-  const padTop = 16, padBottom = 26, barW = Math.min(22, genislikBirim * 0.5);
+  const tarihVar = noktalar.some(v => v.tarih);
+  const h = tarihVar ? 176 : 160;
+  const padTop = 16, padBottom = tarihVar ? 42 : 26, barW = Math.min(22, genislikBirim * 0.5);
   const maxVal = Math.max(...noktalar.map(v => v.deger), 1);
   const minVal = Math.min(...noktalar.map(v => v.deger), 0);
   const range = Math.max(maxVal - minVal, 1);
@@ -1997,7 +2001,13 @@ function baRenderComboChart(noktalar, zoomKey, tikFn, birim) {
   const noktaDaire = pts.map(p => `
     <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="var(--accent)" style="cursor:pointer;" onclick="${tikFn}('${p.etiket}', ${p.deger}, '${birimEtiket}')"></circle>`).join('');
   const etiketler = pts.map(p => `
-    <text x="${p.x.toFixed(1)}" y="${h-8}" font-size="9" fill="var(--text3)" text-anchor="middle">${p.etiket}</text>`).join('');
+    <text x="${p.x.toFixed(1)}" y="${tarihVar ? h-22 : h-8}" font-size="9" fill="var(--text3)" text-anchor="middle">${p.etiket}</text>`).join('');
+  // Etiketin altına (varsa) tarih: sütun genişliğine sığacak şekilde yazı boyutu otomatik ayarlanır
+  // ("gg.aa" ≈ 2,5 em). Sütun payı = noktalar arası mesafe (tek nokta varsa tüm genişlik).
+  const slot = noktalar.length === 1 ? w : (w - 30) / (noktalar.length - 1);
+  const tarihFont = Math.max(5, Math.min(9, slot * 0.92 / 2.5));
+  const tarihler = tarihVar ? pts.map(p => p.tarih ? `
+    <text x="${p.x.toFixed(1)}" y="${h-8}" font-size="${tarihFont.toFixed(1)}" fill="var(--text3)" text-anchor="middle">${p.tarih}</text>` : '').join('') : '';
   // Her mumun/noktanın üzerinde değeri rakamsal olarak gösterir: Net ise olduğu gibi (ör. 46.25),
   // Puan ise sadece ilk 3 rakamı (tam sayı kısmı, ör. 367,128 -> 367) gösterilir.
   const degerMetni = (v) => {
@@ -2025,6 +2035,7 @@ function baRenderComboChart(noktalar, zoomKey, tikFn, birim) {
         ${noktaDaire}
         ${degerEtiketleri}
         ${etiketler}
+        ${tarihler}
       </svg>
     </div>
     <div class="ba-line-tooltip" id="baComboTooltip">Bir noktaya dokun, değeri gör</div>`;
