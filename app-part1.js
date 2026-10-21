@@ -1948,9 +1948,11 @@ function renderAnaliz(o) {
             if (tarih.getMonth() !== aySecili) continue;
             const soru = (+v.d || 0) + (+v.y || 0) + (+v.b || 0);
             if (!soru) continue;
-            if (!rapor[d.ad]) rapor[d.ad] = {};
-            if (!rapor[d.ad][konuAd]) rapor[d.ad][konuAd] = 0;
-            rapor[d.ad][konuAd] += soru;
+            // Ders adı bölüm etiketiyle ("TYT Matematik", "AYT Matematik") — aynı adlı dersler karışmasın
+            const dersEtiket = d.sinav + ' ' + d.ad;
+            if (!rapor[dersEtiket]) rapor[dersEtiket] = {};
+            if (!rapor[dersEtiket][konuAd]) rapor[dersEtiket][konuAd] = 0;
+            rapor[dersEtiket][konuAd] += soru;
           }
         });
       });
