@@ -1457,6 +1457,7 @@ function renderTeacherView() {
       <button class="btn-primary" style="flex:1;min-width:140px;${tv.sub==='kisisel'?'':'opacity:0.75;'}" onclick="tvGo('student','${o.id}','kisisel')">📋 Kişisel Bilgiler</button>
       <button class="btn-primary" style="flex:1;min-width:140px;background:var(--blue);${tv.sub==='program'?'':'opacity:0.75;'}" onclick="tvGo('student','${o.id}','program')">📅 Ders Programı Hazırla</button>
       <button class="btn-primary" style="flex:1;min-width:140px;background:var(--accent2);${tv.sub==='analiz'?'':'opacity:0.75;'}" onclick="tvGo('student','${o.id}','analiz')">📊 Öğrenci Analiz</button>
+      <button class="btn-primary" style="flex:1;min-width:140px;background:#0f766e;${tv.sub==='cozulen'?'':'opacity:0.75;'}" onclick="tvCsAc('${o.id}')">🧾 Çözülen Sorular</button>
       <button class="btn-primary" style="flex:1;min-width:140px;background:linear-gradient(135deg,#8a6a2f,#d4af5a);" onclick="tvOgrenciVeriGirisiAc('${o.id}')">✏️ Veri Girişi Düzenle</button>
       <button class="btn-primary" style="flex:1;min-width:140px;background:${ogrenciAyariGetir(o.id,'appAcik') ? '#0284c7' : '#7f1d1d'};${tv.sub==='appAyar'?'':'opacity:0.75;'}position:relative;" onclick="tvGo('student','${o.id}','appAyar')">
         🔐 App Open/Close <span style="background:${ogrenciAyariGetir(o.id,'appAcik') ? 'var(--green)' : 'var(--red)'};color:#fff;border-radius:10px;padding:1px 7px;font-size:0.68rem;margin-left:6px;">${ogrenciAyariGetir(o.id,'appAcik') ? 'ON' : 'OFF'}</span>
@@ -1469,6 +1470,7 @@ function renderTeacherView() {
   if (tv.sub === 'kisisel') return head + renderKisisel(o);
   if (tv.sub === 'program') return head + renderProgram(o);
   if (tv.sub === 'analiz')  return head + renderAnaliz(o);
+  if (tv.sub === 'cozulen') return head + renderCozulenSorular(o);
   if (tv.sub === 'appAyar') return head + `
     <h3 style="font-size:1rem;margin-bottom:8px;">🔐 App Open/Close — ${o.name}</h3>
     <p class="pmeta" style="margin-bottom:18px;">Açık (ON) olduğunda bu öğrenci ve ona bağlı veli hesabı sisteme giriş yapabilir. Kapalı (OFF) olduğunda sadece bu öğrencinin ve velisinin girişi engellenir; diğer öğrenciler etkilenmez.</p>
@@ -1862,6 +1864,173 @@ function dbDersBasarisiHtml(s) {
       </div>`).join('');
   });
   return out;
+}
+
+// ---------- 2b) ÇÖZÜLEN SORULAR (rehber öğretmen: öğrencinin verdiği cevapları inceleme) ----------
+// Soru Bankası: state.sb.cevaplar[soruId] = seçilen harf (+ cevapTs / sureler).
+// Denemelerim: state.denemeCevaplari['TUR_no_dersKey'] = { ts, c: { soruId: harf } } (v38'den itibaren çözülen denemeler;
+// boş bırakılanlar c içinde yoktur). Eski denemelerde soru bazlı cevap tutulmadığı için yalnızca D/Y/B toplamı vardır.
+let tvCs = { kaynak: null, sinav: null, ders: null, deneme: null, filtre: 'hepsi', limit: 20 };
+let tvCsHarita = null;
+function tvCsSoru(id) {
+  if (!tvCsHarita) { tvCsHarita = {}; if (typeof SORULAR !== 'undefined') SORULAR.forEach(q => { tvCsHarita[q.id] = q; }); if (typeof DENEME_TAMAMLAYICI !== 'undefined') DENEME_TAMAMLAYICI.forEach(q => { tvCsHarita[q.id] = q; }); }
+  return tvCsHarita[id];
+}
+function tvCsAc(id) { tvCs = { kaynak: null, sinav: null, ders: null, deneme: null, filtre: 'hepsi', limit: 20 }; tvGo('student', id, 'cozulen'); }
+function tvCsYenile() { renderRolePanel(); try { window.scrollTo(0, 0); } catch (e) {} }
+function tvCsKaynak(k) { tvCs.kaynak = k; tvCs.sinav = null; tvCs.ders = null; tvCs.deneme = null; tvCs.filtre = 'hepsi'; tvCs.limit = 20; tvCsYenile(); }
+function tvCsSinav(sn) { tvCs.sinav = sn; tvCs.ders = null; tvCsYenile(); }
+function tvCsDers(d) { tvCs.ders = d; tvCs.filtre = 'hepsi'; tvCs.limit = 20; tvCsYenile(); }
+function tvCsDeneme(k) { tvCs.deneme = k; tvCs.filtre = 'hepsi'; tvCs.limit = 20; tvCsYenile(); }
+function tvCsFiltre(f) { tvCs.filtre = f; tvCs.limit = 20; renderRolePanel(); }
+function tvCsDaha() { tvCs.limit += 20; renderRolePanel(); }
+function tvCsGeri() {
+  if (tvCs.kaynak === 'sb') {
+    if (tvCs.ders) tvCs.ders = null; else if (tvCs.sinav) tvCs.sinav = null; else tvCs.kaynak = null;
+  } else if (tvCs.kaynak === 'deneme') {
+    if (tvCs.deneme) tvCs.deneme = null; else tvCs.kaynak = null;
+  }
+  tvCs.filtre = 'hepsi'; tvCs.limit = 20; tvCsYenile();
+}
+
+// Soru Bankası'nda öğrencinin cevapladığı sorular → [{q, cevap, ts, sure, sonuc}]
+function tvCsSbOgeler(s) {
+  const sb = (s && s.sb) || {};
+  const cev = sb.cevaplar || {}, ts = sb.cevapTs || {}, sure = sb.sureler || {};
+  const out = [];
+  Object.keys(cev).forEach(id => {
+    const q = tvCsSoru(id);
+    if (!q || !cev[id]) return;
+    out.push({ q, cevap: cev[id], ts: ts[id] || 0, sure: sure[id] || 0, sonuc: cev[id] === q.dogru ? 'dogru' : 'yanlis' });
+  });
+  return out;
+}
+function tvCsSayilar(liste) {
+  let d = 0, y = 0, b = 0;
+  liste.forEach(x => { if (x.sonuc === 'dogru') d++; else if (x.sonuc === 'yanlis') y++; else b++; });
+  return { d, y, b, toplam: liste.length };
+}
+function tvCsTarih(ts) {
+  if (!ts) return '';
+  const dt = new Date(ts);
+  if (isNaN(dt)) return '';
+  return dt.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + dt.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+}
+function tvCsSoruKarti(it, sira) {
+  const q = it.q;
+  const rozet = it.sonuc === 'dogru' ? ['✅ Doğru', '#166534', '#dcfce7'] : it.sonuc === 'yanlis' ? ['❌ Yanlış', '#991b1b', '#fee2e2'] : ['⚪ Boş', '#475569', '#e2e8f0'];
+  const siklar = (q.siklar || []).map(sik => {
+    const dogruMu = sik.harf === q.dogru, sectiMi = sik.harf === it.cevap;
+    let bg = 'var(--surface)', bd = 'var(--border)', etiket = '';
+    if (dogruMu) { bg = 'rgba(22,163,74,0.12)'; bd = '#16a34a'; etiket = '<span style="font-size:0.66rem;font-weight:800;color:#166534;">✔ Doğru cevap</span>'; }
+    if (sectiMi && !dogruMu) { bg = 'rgba(220,38,38,0.12)'; bd = '#dc2626'; etiket = '<span style="font-size:0.66rem;font-weight:800;color:#991b1b;">✖ Öğrencinin cevabı</span>'; }
+    if (sectiMi && dogruMu) etiket = '<span style="font-size:0.66rem;font-weight:800;color:#166534;">✔ Öğrencinin cevabı (doğru)</span>';
+    return `<div style="display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:10px;border:1.5px solid ${bd};background:${bg};margin-bottom:5px;font-size:0.84rem;">
+      <b style="min-width:18px;">${sik.harf})</b><span style="flex:1;">${sik.metin}</span>${etiket ? `<span style="flex-shrink:0;text-align:right;">${etiket}</span>` : ''}</div>`;
+  }).join('');
+  const meta = [q.konu || '', it.ts ? tvCsTarih(it.ts) : '', it.sure ? it.sure + ' sn' : ''].filter(Boolean).join(' · ');
+  return `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:0.74rem;font-weight:800;color:var(--text3);">Soru ${sira}${q.kaynak && q.seviye === 'cikmis' ? ' · ' + q.kaynak : ''}</span>
+        <span style="font-size:0.72rem;font-weight:800;padding:2px 9px;border-radius:12px;color:${rozet[1]};background:${rozet[2]};">${rozet[0]}${it.sonuc === 'yanlis' || it.sonuc === 'dogru' ? ' · cevap: ' + it.cevap : ''}</span>
+      </div>
+      ${meta ? `<div class="pmeta" style="margin-bottom:8px;">${meta}</div>` : ''}
+      <div style="font-size:0.88rem;line-height:1.55;margin-bottom:10px;">${q.metin || ''}</div>
+      ${siklar}
+      <div style="font-size:0.78rem;margin:6px 0 2px;"><b>Doğru cevap: ${q.dogru}</b>${it.sonuc === 'bos' ? ' · öğrenci boş bıraktı' : ''}</div>
+      ${q.aciklama ? `<details style="font-size:0.8rem;line-height:1.5;"><summary style="cursor:pointer;font-weight:700;color:var(--accent);">Açıklamayı göster</summary><div style="margin-top:6px;">${q.aciklama}</div></details>` : ''}
+    </div>`;
+}
+function tvCsKartListesi(liste, bosVar) {
+  const f = tvCs.filtre;
+  const sayi = tvCsSayilar(liste);
+  const chip = (k, ad, n) => `<button onclick="tvCsFiltre('${k}')" style="padding:7px 12px;border-radius:18px;border:1px solid var(--border);cursor:pointer;font-size:0.76rem;font-weight:800;${f === k ? 'background:var(--accent);color:#fff;border-color:var(--accent);' : 'background:var(--surface2);color:var(--text2);'}">${ad} (${n})</button>`;
+  const filtreli = f === 'hepsi' ? liste : liste.filter(x => x.sonuc === (f === 'dogru' ? 'dogru' : f === 'yanlis' ? 'yanlis' : 'bos'));
+  const goster = filtreli.slice(0, tvCs.limit);
+  let html = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+      ${chip('hepsi', 'Tümü', sayi.toplam)}${chip('yanlis', '❌ Yanlışlar', sayi.y)}${chip('dogru', '✅ Doğrular', sayi.d)}${bosVar ? chip('bos', '⚪ Boşlar', sayi.b) : ''}
+    </div>`;
+  if (!filtreli.length) html += '<div class="pmeta">Bu filtrede soru yok.</div>';
+  html += goster.map((it, i) => tvCsSoruKarti(it, it.sira || (i + 1))).join('');
+  if (filtreli.length > goster.length) html += `<button class="btn-primary" style="width:100%;" onclick="tvCsDaha()">Daha fazla göster (${filtreli.length - goster.length} soru daha)</button>`;
+  return html;
+}
+
+function renderCozulenSorular(o) {
+  const s = getStudentState(o.id);
+  const baslik = (t, geri) => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">${geri ? `<button class="btn-link" style="margin:0;" onclick="tvCsGeri()">← Geri</button>` : ''}<h3 style="font-size:1rem;margin:0;">${t}</h3></div>`;
+  if (!s) return '<div class="pmeta">Bu öğrencinin verisi bu cihazda bulunamadı. Öğrenci veri girdiğinde burada görünecek.</div>';
+
+  // 0) Kaynak seçimi
+  if (!tvCs.kaynak) {
+    const sbListe = tvCsSbOgeler(s), sbS = tvCsSayilar(sbListe);
+    const dc = s.denemeCevaplari || {}, dcN = Object.keys(dc).length;
+    return baslik('🧾 Çözülen Sorular — ' + o.name, false) + `
+      <p class="pmeta" style="margin-bottom:12px;">Öğrencinin çözdüğü soruları ve verdiği cevapları incele.</p>
+      <div class="panel-list-item" style="cursor:pointer;" onclick="tvCsKaynak('sb')"><div><div class="pname">📝 Soru Bankası</div><div class="pmeta">${sbS.toplam} soru · ✅ ${sbS.d} doğru · ❌ ${sbS.y} yanlış</div></div><div style="font-size:1.2rem;">›</div></div>
+      <div class="panel-list-item" style="cursor:pointer;" onclick="tvCsKaynak('deneme')"><div><div class="pname">⏱️ Denemelerim</div><div class="pmeta">${dcN ? dcN + ' çözülmüş deneme bölümü' : 'Henüz soru bazlı kayıt yok (yeni çözülen denemelerden itibaren tutulur)'}</div></div><div style="font-size:1.2rem;">›</div></div>`;
+  }
+
+  // ── SORU BANKASI ──
+  if (tvCs.kaynak === 'sb') {
+    const hepsi = tvCsSbOgeler(s);
+    const dersBilgi = key => { const b = kvzDersBilgi(key); return b ? { sinav: b.sinav, ad: b.ad, emoji: b.emoji } : { sinav: 'Diğer', ad: key, emoji: '📘' }; };
+    // sınav seçimi
+    if (!tvCs.sinav) {
+      const kart = sn => {
+        const l = hepsi.filter(x => dersBilgi(x.q.ders).sinav === sn), c = tvCsSayilar(l);
+        return `<div class="panel-list-item" style="cursor:pointer;" onclick="tvCsSinav('${sn}')"><div><div class="pname">${sn}</div><div class="pmeta">${c.toplam ? c.toplam + ' soru · ✅ ' + c.d + ' · ❌ ' + c.y : 'Çözülen soru yok'}</div></div><div style="font-size:1.2rem;">›</div></div>`;
+      };
+      return baslik('📝 Soru Bankası — Bölüm Seç', true) + ['TYT', 'AYT', 'YDT'].map(kart).join('') +
+        (hepsi.some(x => dersBilgi(x.q.ders).sinav === 'Diğer') ? kart('Diğer') : '');
+    }
+    // ders seçimi (yalnızca çözülen sorusu olan dersler)
+    if (!tvCs.ders) {
+      const dersKeys = (tvCs.sinav === 'Diğer' ? [...new Set(hepsi.filter(x => !kvzDersBilgi(x.q.ders)).map(x => x.q.ders))]
+        : (VG_DERSLER[tvCs.sinav] || []).map(d => d.key));
+      const satirlar = dersKeys.map(k => {
+        const l = hepsi.filter(x => x.q.ders === k); if (!l.length) return '';
+        const c = tvCsSayilar(l), b = dersBilgi(k);
+        const oran = c.toplam ? Math.round(c.d / c.toplam * 100) : 0;
+        return `<div class="panel-list-item" style="cursor:pointer;" onclick="tvCsDers('${k}')"><div><div class="pname">${b.emoji || '📘'} ${b.sinav} ${b.ad}</div><div class="pmeta">${c.toplam} soru · ✅ ${c.d} · ❌ ${c.y} · doğru oranı %${oran}</div></div><div style="font-size:1.2rem;">›</div></div>`;
+      }).join('');
+      return baslik('📝 ' + tvCs.sinav + ' — Ders Seç', true) + (satirlar || '<div class="pmeta">Bu bölümde çözülmüş soru yok.</div>');
+    }
+    // soru listesi
+    const b = dersBilgi(tvCs.ders);
+    const liste = hepsi.filter(x => x.q.ders === tvCs.ders).sort((x, y) => (y.ts || 0) - (x.ts || 0));
+    return baslik('📝 ' + b.sinav + ' ' + b.ad + ' — Çözülen Sorular', true) +
+      '<div class="pmeta" style="margin-bottom:10px;">En son çözülen en üstte.</div>' + tvCsKartListesi(liste, false);
+  }
+
+  // ── DENEMELERİM ──
+  const dc = s.denemeCevaplari || {};
+  const adBul = (tur, no, dk) => {
+    const bol = (tur === 'TYT' ? DENEME_TYT_BOLUM : tur === 'YDT' ? DENEME_YDT_BOLUM : Object.keys(DENEME_AYT_BOLUM).reduce((a, k) => a.concat(DENEME_AYT_BOLUM[k].altDersler), [])).find(x => x.key === dk);
+    return tur + ' ' + denemeAdi(+no) + ' · ' + (bol ? bol.ad : dk);
+  };
+  const ayir = k => { const p = k.split('_'); return { tur: p[0], no: p[1], dk: p.slice(2).join('_') }; };
+  if (!tvCs.deneme) {
+    const anahtarlar = Object.keys(dc).sort((a, b) => (dc[b].ts || 0) - (dc[a].ts || 0));
+    const satirlar = anahtarlar.map(k => {
+      const { tur, no, dk } = ayir(k);
+      const sorular = denemeSoruGetir(tur, +no, dk), c = dc[k].c || {};
+      let d = 0, y = 0;
+      sorular.forEach(q => { if (c[q.id]) { if (c[q.id] === q.dogru) d++; else y++; } });
+      return `<div class="panel-list-item" style="cursor:pointer;" onclick="tvCsDeneme('${k}')"><div><div class="pname">${adBul(tur, no, dk)}</div><div class="pmeta">${tvCsTarih(dc[k].ts)} · D ${d} · Y ${y} · B ${sorular.length - d - y} · net ${(d - y / 4).toFixed(2)}</div></div><div style="font-size:1.2rem;">›</div></div>`;
+    }).join('');
+    return baslik('⏱️ Denemelerim — Çözülen Bölümler', true) + (satirlar || '<div class="pmeta">Henüz soru bazlı kayıt yok. Öğrenci bu sürümden sonra bir deneme bölümünü bitirdiğinde cevapları burada görünür (daha önce çözülen denemelerde yalnızca doğru/yanlış/boş sayıları saklanmıştı).</div>');
+  }
+  const k = tvCs.deneme, kayit = dc[k];
+  if (!kayit) { tvCs.deneme = null; return renderCozulenSorular(o); }
+  const { tur, no, dk } = ayir(k);
+  const cev = kayit.c || {};
+  const liste = denemeSoruGetir(tur, +no, dk).map((q, i) => ({
+    q, sira: i + 1, cevap: cev[q.id] || '', ts: 0, sure: 0,
+    sonuc: !cev[q.id] ? 'bos' : cev[q.id] === q.dogru ? 'dogru' : 'yanlis'
+  }));
+  return baslik('⏱️ ' + adBul(tur, no, dk), true) + `<div class="pmeta" style="margin-bottom:10px;">${tvCsTarih(kayit.ts)} tarihinde bitirildi.</div>` + tvCsKartListesi(liste, true);
 }
 
 // ---------- 3) ÖĞRENCİ ANALİZ ----------
