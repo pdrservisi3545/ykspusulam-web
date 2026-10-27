@@ -5463,7 +5463,7 @@ function renderVideoYonetim() {
 // ============================================================
 //  ⏱️ DENEMELERİM — Deneme Motoru
 // ============================================================
-const DENEME_TOPLAM = 10; // her sınav türü için ayrı ayrı 10'ar deneme
+const DENEME_TOPLAM = 11; // her sınav türü için ayrı ayrı: 1-10 özgün denemeler + 11 = 2026 çıkmış sorular denemesi
 
 // TYT — gerçek TYT formatı: 4 test, 120 soru, 165 dakika
 const DENEME_TYT_BOLUM = [
@@ -5644,6 +5644,31 @@ Object.keys(DENEME_FEN_OZEL).forEach(function(no) {
   if (!DENEME_SORU_BANKASI.TYT[no]) DENEME_SORU_BANKASI.TYT[no] = {};
   DENEME_SORU_BANKASI.TYT[no].tytFen = DENEME_FEN_OZEL[no];
 });
+const DENEME_2026_NO = 11; // 11. deneme = 2026 çıkmış sorulardan oluşan deneme (TYT/AYT/YDT ayrı)
+const DENEME_2026_ID = {"TYT": {"tytTurkce": ["pak196", "ck38", "pak197", "ck39", "pak198", "ca34", "ca35", "iss87", "fil31", "co75", "yzk107", "yzk108", "ni89", "ni90", "pyk37", "pyk38", "pyk39", "pak199", "pak200", "pak201", "pak202", "pak203", "pak204", "pak205", "pak206", "pak207", "pak208", "pak209", "pak210", "pak211", "pak212", "pak213", "pak214", "pak215", "pak216", "pak217", "pak218", "pak219", "pak220", "pak221"], "tytSosyal": ["ioc81", "tik61", "smt33", "mm92", "mm93", "aik50", "dyo21", "nvg58", "bol36", "afe57", "fd27", "ftk129", "msf64", "ody50", "y20_43", "bvi36", "bvi37", "hmg31", "aii43", "dvi29"], "tytMatematik": ["mrs7", "mus9", "mks9", "rop30", "rop31", "rop32", "mmg10", "msb14", "rop33", "kme9", "mnt6", "fon11", "mbi2", "rop34", "msb15", "vri16", "rop35", "rop36", "yfp15", "oro9", "yasp8", "hrp9", "vri17", "hrp10", "rop37", "mee5", "rop38", "rop39", "pko17", "pko18", "aca22", "aks43", "ikiz31", "dut52", "dut53", "delt35", "dik40", "yam32", "dkp47", "dkp48"], "tytFen": ["mve43", "hvk64", "bk31", "isc57", "es22", "dg31", "op67", "kmt1", "kiy1", "kli1", "kvp1", "kal1", "kcd1", "kmr1", "bdz1", "bam1", "beh1", "mdg1", "kso1", "etb1"]}, "AYT": {"aytEdebiyat": ["ayde117", "ayss41", "aysb69", "ayhe43", "aygd29", "aymd57", "aymd58", "ayde118", "ayde119", "ayde120", "aynb57", "aytz71", "aysf64", "aymi36", "aycu101", "aynb58", "aycu102", "eak57", "ck40", "ca36", "pak222", "pak223", "pak224", "pak225"], "aytTarih1": ["aidc8", "itdc9", "imdc11", "osmc5", "osmc6", "udsc4", "osdc8", "ammc18", "ammc19", "aatic6"], "aytCografya1": ["cdsc9", "cbsc22", "cbsc23", "kurc11", "cbsc24", "cbsc25"], "aytTarih2": ["aytt1", "aytt2", "aytt3", "aytt4", "aytt5", "aytt6", "aytt7", "aytt8", "aytt9", "aytt10", "aytt11"], "aytCografya2": ["aytc1", "aytc2", "aytc3", "aytc4", "aytc5", "aytc6", "aytc7", "aytc8", "aytc9", "aytc10", "aytc11"], "aytFelsefe": ["aytfg1", "aytfg3", "aytfg13", "aytfg4", "aytfg5", "aytfg6", "aytfg7", "aytfg9", "aytfg17", "aytfg10", "aytfg11", "aytfg12"], "aytDin": ["aytd1", "aytd2", "aytd3", "aytd4", "aytd5", "aytd6"], "aytMatematik": ["amt26_6", "amt26_11", "amt26_12", "amt26_13", "amt26_14", "amt26_17", "amt26_18", "amt26_19", "amt26_20", "amt26_21", "amt26_22", "amt26_23", "amt26_24", "amt26_25", "amt26_26", "amt26_27", "amt26_28", "amt26_29", "amt26_30", "amtg26_31", "amtg26_32", "amtg26_33", "amtg26_34", "amtg26_35", "amtg26_36", "amtg26_37", "amtg26_38", "amtg26_39", "amtg26_40", "amt26_1", "amt26_2", "amt26_3", "amt26_4", "amt26_5", "amt26_7", "amt26_8", "amt26_9", "amt26_10", "amt26_15", "amt26_16"], "aytFizik": ["fzpm1", "fzbg1", "fzen1", "fztq1", "fzea1", "fzmn1", "fzac1", "fzcc1", "fzdo1", "fzsh1", "fzdp1", "fzam1", "fzfo1", "fzgt1"], "aytKimya": ["kmam1", "kmgz1", "kmgz2", "kmco1", "kmen1", "kmhz1", "kmde1", "kmde2", "kmel1", "kmkg1", "kmkg2", "kmob1", "kmob2"], "aytBiyoloji": ["bidh1", "biur1", "biur2", "bidr1", "bido1", "biek1", "biek2", "bina1", "bige1", "bifo1", "bihs1", "bimtx1", "bimtx2"]}, "YDT": {"ydtIngilizce": ["ydv1", "ydv2", "ydv3", "ydv4", "ydv5", "ydg2", "ydg3", "ydg4", "ydg5", "ydg6", "ydg7", "ydg8", "ydg9", "ydg10", "ydc1", "ydc2", "ydc3", "ydc4", "ydc5", "ydxsc1", "ydxsc2", "ydxsc3", "ydxsc4", "ydxsc5", "ydxsc6", "ydxsc7", "ydxsc8", "ydo1", "ydo2", "ydo3", "ydo4", "ydo5", "ydo6", "ydo7", "ydo8", "ydo9", "ydo10", "ydo11", "ydo12", "ydp1", "ydp2", "ydp3", "ydd1", "ydd2", "ydd3", "ydd4", "ydd5", "ydr1", "ydr2", "ydr3", "ydr4", "ydr5", "ydsi1", "ydsi2", "ydsi3", "ydsi4", "ydsi5", "ydpc1", "ydpc2", "ydpc3", "ydpc4", "ydpc5", "ydt1", "ydt2", "ydt3", "ydt4", "ydt5", "ydt6", "ydt7", "ydt8", "ydt9", "ydt10", "ydir1", "ydir2", "ydir3", "ydir4", "ydir5"]}};
+
+// 2026 çıkmış sorular denemesi: sorular Soru Bankası havuzundan (SORULAR, kaynak 2026-TYT/AYT/YDT) kimlikle çekilir.
+// Dağılım resmî sınav formatına göredir (TYT 120: Türkçe 40, Sosyal 20, Matematik 40, Fen 20; AYT: bölümlerin resmî adetleri;
+// YDT 80 — şıkları eksik olan ydg1 çıkarıldığı için 77). Havuzda fazla olan sorular (TYT Felsefe, AYT Felsefe Grubu) konuya
+// yayılacak şekilde elenmiştir. Bulunamayan kimlik sessizce atlanır; test dosyası adetleri doğrular.
+(function deneme2026Kur() {
+  try {
+    if (typeof SORULAR === 'undefined') return;
+    const harita = {};
+    SORULAR.forEach(function (q) { harita[q.id] = q; });
+    ['TYT', 'AYT', 'YDT'].forEach(function (tur) {
+      if (!DENEME_SORU_BANKASI[tur][DENEME_2026_NO]) DENEME_SORU_BANKASI[tur][DENEME_2026_NO] = {};
+      Object.keys(DENEME_2026_ID[tur]).forEach(function (dersKey) {
+        DENEME_SORU_BANKASI[tur][DENEME_2026_NO][dersKey] = DENEME_2026_ID[tur][dersKey]
+          .map(function (id) { return harita[id]; })
+          .filter(function (q) { return q && Array.isArray(q.siklar) && q.siklar.length >= 4 && q.siklar.some(function (x) { return x.harf === q.dogru; }); });
+      });
+    });
+  } catch (e) {}
+})();
+// Deneme başlığında numara yerine 2026 etiketi
+function denemeAdi(no) { return no === DENEME_2026_NO ? '2026 Çıkmış Sorular' : 'Deneme ' + no; }
+
 function denemeSoruGetir(tur, no, dersKey) {
   const d = DENEME_SORU_BANKASI[tur] && DENEME_SORU_BANKASI[tur][no];
   return (d && Array.isArray(d[dersKey])) ? d[dersKey] : [];
@@ -5898,7 +5923,7 @@ function denemeBolumSecGoster(el) {
     <div style="position:relative;border-radius:22px;overflow:hidden;padding:18px 16px 22px;background:radial-gradient(circle at 20% 10%,rgba(212,169,80,0.18),transparent 45%),linear-gradient(160deg,#faf6ec,#f0e8d4 60%,#ece2c8);border:1px solid rgba(180,140,60,0.3);box-shadow:0 8px 22px rgba(120,90,30,0.15);">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
         <button onclick="denemeSt.view='bilgi';renderDenemelerim(document.getElementById('mainContent'))" style="background:none;border:none;cursor:pointer;padding:0;display:flex;flex-shrink:0;"><img src="${GERI_TUS_ICON}" style="width:32px;height:32px;"></button>
-        <div style="font-family:'Playfair Display',serif;font-size:1.15rem;font-weight:900;color:#3a2a15;flex:1;">${denemeSt.tur} Deneme ${denemeSt.no} · Bölümler</div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.15rem;font-weight:900;color:#3a2a15;flex:1;">${denemeSt.tur} ${denemeAdi(denemeSt.no)} · Bölümler</div>
         <div id="denemeSayacUst" style="font-weight:800;font-size:0.85rem;color:#8a4a2f;background:rgba(255,255,255,0.6);padding:5px 10px;border-radius:10px;">${denemeSureFormat(denemeGecenSn())}</div>
       </div>
       ${kartlar}
@@ -5975,18 +6000,20 @@ function denemeListeGoster(el) {
     return varMi ? toplam.toFixed(1) : null;
   };
   const grupHtml = (tur, emoji, renk) => {
-    const dugmeler = Array.from({length: DENEME_TOPLAM}, (_,i) => {
-      const no = i+1;
+    const dugmeKur = (no, ozel) => {
       const net = guncelNet(tur, no);
       const hazirMi = (tur === 'TYT') ? DENEME_TYT_BOLUM.every(b => denemeSoruGetir('TYT', no, b.key).length>0)
         : (tur === 'YDT') ? DENEME_YDT_BOLUM.every(b => denemeSoruGetir('YDT', no, b.key).length>0)
         : Object.keys(DENEME_AYT_BOLUM).some(bk => DENEME_AYT_BOLUM[bk].altDersler.some(d => denemeSoruGetir('AYT', no, d.key).length>0));
+      const durum = hazirMi ? (net!==null ? '✅ Tamamlandı' : 'Başla') : 'Yakında';
       return `
-      <div onclick="denemeSec('${tur}',${no})" style="background:${hazirMi ? renk : 'var(--surface2)'};border-radius:12px;padding:10px 6px;text-align:center;cursor:pointer;box-shadow:0 3px 8px rgba(0,0,0,0.15);opacity:${hazirMi?1:0.55};">
-        <div style="font-weight:800;font-size:0.85rem;color:${hazirMi?'#fff':'var(--text2)'};">${no}</div>
-        <div style="font-size:0.6rem;color:${hazirMi?'rgba(255,255,255,0.85)':'var(--text3)'};margin-top:2px;">${hazirMi ? (net!==null ? '✅ Tamamlandı' : 'Başla') : 'Yakında'}</div>
+      <div onclick="denemeSec('${tur}',${no})" style="${ozel ? 'grid-column:1 / -1;display:flex;align-items:center;justify-content:center;gap:10px;' : ''}background:${hazirMi ? renk : 'var(--surface2)'};border-radius:12px;padding:10px 6px;text-align:center;cursor:pointer;box-shadow:0 3px 8px rgba(0,0,0,0.15);opacity:${hazirMi?1:0.55};">
+        <div style="font-weight:800;font-size:0.85rem;color:${hazirMi?'#fff':'var(--text2)'};">${ozel ? '🏆 2026 Çıkmış Sorular' : no}</div>
+        <div style="font-size:0.6rem;color:${hazirMi?'rgba(255,255,255,0.85)':'var(--text3)'};margin-top:${ozel ? 0 : 2}px;">${durum}</div>
       </div>`;
-    }).join('');
+    };
+    // 1-10: özgün denemeler (5'li ızgara); 11: 2026 çıkmış sorular denemesi (tam genişlikte ayrı düğme)
+    const dugmeler = Array.from({length: DENEME_TOPLAM - 1}, (_,i) => dugmeKur(i+1, false)).join('') + dugmeKur(DENEME_2026_NO, true);
     return `
     <div style="margin-bottom:18px;">
       <div style="font-weight:800;font-size:0.95rem;margin-bottom:8px;">${emoji} ${tur} Denemeleri</div>
@@ -6015,7 +6042,7 @@ function denemeAlanSecGoster(el) {
     <div style="position:relative;border-radius:22px;overflow:hidden;padding:18px 16px 22px;background:radial-gradient(circle at 20% 10%,rgba(212,169,80,0.18),transparent 45%),linear-gradient(160deg,#faf6ec,#f0e8d4 60%,#ece2c8);border:1px solid rgba(180,140,60,0.3);box-shadow:0 8px 22px rgba(120,90,30,0.15);">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
         <button onclick="denemeGeri()" style="background:none;border:none;cursor:pointer;padding:0;display:flex;flex-shrink:0;"><img src="${GERI_TUS_ICON}" style="width:32px;height:32px;"></button>
-        <div style="font-family:'Playfair Display',serif;font-size:1.15rem;font-weight:900;color:#3a2a15;">AYT Deneme ${denemeSt.no} — Alan Seç</div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.15rem;font-weight:900;color:#3a2a15;">AYT ${denemeAdi(denemeSt.no)} — Alan Seç</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;">
         ${secenekler.map(s => `
@@ -6035,7 +6062,7 @@ function denemeBilgiGoster(el) {
   const toplamHedef = denemeToplamSoruHedef();
   const sureDk = denemeSureDk();
   const bolumler = denemeBolumler();
-  const baslik = denemeSt.tur + ' Deneme ' + denemeSt.no + (denemeSt.alan ? ' · ' + DENEME_AYT_ALAN[denemeSt.alan].ad : '');
+  const baslik = denemeSt.tur + ' ' + denemeAdi(denemeSt.no) + (denemeSt.alan ? ' · ' + DENEME_AYT_ALAN[denemeSt.alan].ad : '');
   const bolumSatiri = (b) => {
     const mevcut = denemeSoruGetir(denemeSt.tur, denemeSt.no, b.key).length;
     const dolu = mevcut > 0;
@@ -6166,7 +6193,7 @@ function renderDenemeSonuc(el) {
     <div style="position:relative;border-radius:22px;overflow:hidden;padding:18px 16px 22px;background:radial-gradient(circle at 20% 10%,rgba(212,169,80,0.18),transparent 45%),linear-gradient(160deg,#faf6ec,#f0e8d4 60%,#ece2c8);border:1px solid rgba(180,140,60,0.3);box-shadow:0 8px 22px rgba(120,90,30,0.15);">
       <div style="text-align:center;margin-bottom:10px;">
         <div style="font-size:2rem;">🏁</div>
-        <div style="font-family:'Playfair Display',serif;font-size:1.15rem;font-weight:900;color:#3a2a15;">${denemeSt.tur} Deneme ${denemeSt.no} Tamamlandı</div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.15rem;font-weight:900;color:#3a2a15;">${denemeSt.tur} ${denemeAdi(denemeSt.no)} Tamamlandı</div>
         <div style="font-size:0.85rem;color:#6b5636;margin-top:8px;">Toplam ${toplamSoru} soru · <span style="color:#2d6e56;">D:${toplamDogru}</span> · <span style="color:#c0392b;">Y:${toplamYanlis}</span> · <span style="color:#8a7a5c;">B:${toplamBos}</span></div>
         <div style="font-size:1.5rem;font-weight:900;color:#8a4a2f;margin-top:6px;">Net: ${toplamNet.toFixed(1)}</div>
       </div>
