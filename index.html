@@ -1480,6 +1480,44 @@
 </div>
 
 <!-- FIREBASE SDK -->
+<style>img[src^="pimg:"]{opacity:0;min-height:60px}</style>
+<script>
+/* Soru görselleri gorsel-pak-NN.json paketlerinde tutulur; ekranda görünce yüklenir (açılış hızı için). */
+(function(){
+  var V='57',cache={};
+  function pad(n){return n<10?'0'+n:''+n;}
+  function load(p){
+    if(!cache[p]){
+      cache[p]=fetch('gorsel-pak-'+pad(p)+'.json?v='+V).then(function(r){if(!r.ok)throw new Error('pak '+p);return r.json();}).catch(function(e){delete cache[p];throw e;});
+    }
+    return cache[p];
+  }
+  function fix(img,tries){
+    var s=img.getAttribute('src');
+    if(!s||s.indexOf('pimg:')!==0)return;
+    var a=s.split(':');
+    load(+a[1]).then(function(m){
+      if(img.getAttribute('src')===s&&m[+a[2]])img.src=m[+a[2]];
+    },function(){
+      if((tries||0)<4)setTimeout(function(){fix(img,(tries||0)+1);},2500*((tries||0)+1));
+    });
+  }
+  function scan(n){
+    if(n.nodeType!==1)return;
+    if(n.tagName==='IMG'){fix(n);return;}
+    var l=n.querySelectorAll?n.querySelectorAll('img[src^="pimg:"]'):[];
+    for(var i=0;i<l.length;i++)fix(l[i]);
+  }
+  new MutationObserver(function(ms){
+    for(var i=0;i<ms.length;i++){
+      var m=ms[i];
+      if(m.type==='attributes'){fix(m.target);continue;}
+      for(var j=0;j<m.addedNodes.length;j++)scan(m.addedNodes[j]);
+    }
+  }).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});
+  window.gorselPaketleriniYukle=function(){};
+})();
+</script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -1497,13 +1535,8 @@
   <div class="content" id="mainContent"></div>
 </div>
 
-<script src="app-part1.js?v=56"></script>
-<script src="app-veri01.js?v=56"></script>
-<script src="app-veri02.js?v=56"></script>
-<script src="app-veri03.js?v=56"></script>
-<script src="app-veri04.js?v=56"></script>
-<script src="app-veri05.js?v=56"></script>
-<script src="app-veri06.js?v=56"></script>
+<script src="app-part1.js?v=57"></script>
+<script src="app-veri.js?v=57"></script>
 
 </script>
 </body>
