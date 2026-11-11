@@ -873,6 +873,90 @@ function cikisOnayla() {
   appConfirm('🚪 Çıkış Yap', 'Uygulamadan çıkış yapmak istediğine emin misin?', 'Evet, Çıkış Yap', logout);
 }
 
+// ============================================================
+//  🎨 ARAYÜZ MODLARI — Premium (varsayılan) · Canlı · Soft · Aksiyon
+//  Seçim: Ayarlar (⚙️) penceresinden. Cihazda localStorage'a, hesapta state.arayuzModu'na yazılır
+//  (böylece öğrencinin başka cihazında da aynı mod açılır). Görünüm CSS'i index.html'de
+//  html[data-mod="canli|soft|aksiyon"] altındadır; Premium'da öznitelik yoktur.
+// ============================================================
+const ARAYUZ_MOD_KEY = 'ykspusulam_arayuz_modu';
+const ARAYUZ_MODLAR = {
+  premium: { ad: 'Premium', ikon: '👑', aciklama: 'Koyu lacivert ve altın; zengin, klasik görünüm.', renkler: ['#232e4a', '#e6b84f', '#f6e4ab'] },
+  canli:   { ad: 'Canlı',   ikon: '🌈', aciklama: 'Canlı renkler, daha sade ve net bir arayüz.',       renkler: ['#3b5bff', '#ff7a1a', '#12b76a'] },
+  soft:    { ad: 'Soft',    ikon: '🌸', aciklama: 'Yumuşak pastel tonlar, sakin ve sade bir arayüz.',  renkler: ['#c7bcff', '#f6b6cf', '#bfe8d3'] },
+  aksiyon: { ad: 'Aksiyon', ikon: '⚔️', aciklama: 'Mücadele, savaş ve zafer teması; kızıl ve altın.',  renkler: ['#14161d', '#e5383b', '#f5b301'] }
+};
+// Ana sayfa simgeleri (Premium resim kullanır; diğer modlar sade emoji)
+const ARAYUZ_IKONLAR = {
+  canli: { kisiselBilgiler:'👤', dersProgramim:'📅', veriGirisi:'✏️', konuVideolari:'🎬', sorubankasi:'📝', denemelerim:'📋', grafik:'📈', dersSayaci:'⏳', soruKavanozu:'💡', mesajlarim:'💬', yksNedir:'❓', meslekKesif:'🧭', egitselOyunlar:'🎮' },
+  aksiyon: { kisiselBilgiler:'🛡️', dersProgramim:'🗺️', veriGirisi:'📜', konuVideolari:'🏕️', sorubankasi:'🏹', denemelerim:'⚔️', grafik:'🎯', dersSayaci:'🔥', soruKavanozu:'💣', mesajlarim:'📯', yksNedir:'🏰', meslekKesif:'👑', egitselOyunlar:'🏆' }
+};
+ARAYUZ_IKONLAR.soft = ARAYUZ_IKONLAR.canli;
+const ARAYUZ_RENKLER = {
+  canli: [['#3b82f6','#1d4ed8'], ['#fb923c','#ea580c'], ['#34d399','#059669'], ['#a78bfa','#7c3aed'], ['#f472b6','#db2777'], ['#22d3ee','#0891b2'], ['#fbbf24','#d97706'], ['#f87171','#dc2626']],
+  soft:  [['#e0e7ff'], ['#fce7f3'], ['#dcfce7'], ['#fef3c7'], ['#ffe4e6'], ['#cffafe'], ['#ede9fe'], ['#ffedd5']],
+  aksiyon: [['#e5383b'], ['#f5b301'], ['#ff7a2f'], ['#aeb4c6']]
+};
+function arayuzModuGecerli(m) { return (m && Object.prototype.hasOwnProperty.call(ARAYUZ_MODLAR, m)) ? m : 'premium'; }
+function arayuzModuOku() {
+  try { return arayuzModuGecerli(localStorage.getItem(ARAYUZ_MOD_KEY)); } catch (e) { return 'premium'; }
+}
+// O anda ekranda uygulanan mod
+function arayuzModuAktif() {
+  const a = document.documentElement.getAttribute('data-mod');
+  return arayuzModuGecerli(a);
+}
+function arayuzModuUygula(mod) {
+  mod = arayuzModuGecerli(mod);
+  const h = document.documentElement;
+  if (mod === 'premium') h.removeAttribute('data-mod'); else h.setAttribute('data-mod', mod);
+  try { localStorage.setItem(ARAYUZ_MOD_KEY, mod); } catch (e) {}
+  return mod;
+}
+function arayuzModuSec(mod) {
+  mod = arayuzModuUygula(mod);
+  try { if (typeof state === 'object' && state) { state.arayuzModu = mod; saveState(); } } catch (e) {}
+  arayuzAyarPaneliAc(true);
+  // Ana sayfadaysa simgeleri yeni moda göre yeniden çiz
+  try {
+    const app = document.getElementById('mainApp');
+    if (app && app.classList.contains('active') && state && state.currentTab === 'dashboard') renderTab('dashboard');
+  } catch (e) {}
+}
+function arayuzAyarPaneliAc(yenile) {
+  appModalKapat();
+  const aktif = arayuzModuAktif();
+  const secenekler = Object.keys(ARAYUZ_MODLAR).map(k => {
+    const m = ARAYUZ_MODLAR[k];
+    return `<button type="button" class="mod-secenek${k === aktif ? ' aktif' : ''}" onclick="arayuzModuSec('${k}')">
+      <div class="mod-renkler">${m.renkler.map(c => `<span style="background:${c}"></span>`).join('')}</div>
+      <div style="min-width:0;"><div class="mod-ad">${m.ikon} ${m.ad}</div><div class="mod-acik">${m.aciklama}</div></div>
+      ${k === aktif ? '<div class="mod-tik">✓</div>' : ''}
+    </button>`;
+  }).join('');
+  const wrap = document.createElement('div');
+  wrap.id = 'appModalRoot';
+  wrap.className = 'appModalOverlay';
+  wrap.innerHTML = `
+    <div class="appModalBox" style="max-width:420px;">
+      <div class="appModalTitle">⚙️ Ayarlar</div>
+      <div style="font-weight:800;font-size:0.92rem;margin-bottom:10px;">🎨 Arayüz Modu</div>
+      ${secenekler}
+      <button class="appModalBtn ghost" style="width:100%;margin-top:4px;" onclick="appModalKapat()">Kapat</button>
+    </div>`;
+  document.body.appendChild(wrap);
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) appModalKapat(); });
+}
+// Ana sayfa menü simgesi (Premium: resim; diğer modlar: emoji) + kutucuğun renk değişkenleri
+function arayuzMenuSimgesi(id, ad, i, mod) {
+  if (mod === 'premium' || !ARAYUZ_IKONLAR[mod]) {
+    return { stil: '', html: `<img class="pusula-menu-icon" src="${PUSULA_ICONS[id]}" alt="${ad}" style="animation-delay:${(i * 0.18).toFixed(2)}s">` };
+  }
+  const r = ARAYUZ_RENKLER[mod][i % ARAYUZ_RENKLER[mod].length];
+  const stil = mod === 'canli' ? `--tc:${r[0]};--tc2:${r[1]};` : `--tc:${r[0]};`;
+  return { stil, html: `<div class="pusula-emoji">${ARAYUZ_IKONLAR[mod][id] || '⭐'}</div>` };
+}
+
 // ---------- Profil paneli (avatar tıklanınca): ad/e-posta/telefon + şifre değiştirme ----------
 function profilPanelAc() {
   if (!currentUser) return;
@@ -2318,6 +2402,7 @@ function startApp() {
 
 function showApp() {
   try { vgUygulamaDenemeKayitlariniAyir(); } catch(e){}
+  try { arayuzModuUygula((state && state.arayuzModu) ? state.arayuzModu : arayuzModuOku()); } catch(e){}
   document.getElementById('mainApp').classList.add('active');
   document.getElementById('topName').textContent = state.student.name;
   buildNav();
@@ -2852,6 +2937,8 @@ function renderDashboard(el) {
   const ad = (state.student && state.student.name) ? state.student.name : '';
   const harf = ad ? ad.trim().charAt(0).toUpperCase() : '🧭';
 
+  const arayuzMod = arayuzModuAktif();
+  const greetSub = arayuzMod === 'aksiyon' ? '⚔️ Savaşa hazır mısın' : greet;
   const menuItems = [
     ['kisiselBilgiler','Kişisel Bilgilerim'],
     ['dersProgramim','Ders Programım'],
@@ -2882,6 +2969,7 @@ function renderDashboard(el) {
             <div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-size:1.1rem;">🔔</div>
             ${bildirimOkunmamisSayisi() > 0 ? `<div style="position:absolute;top:-4px;right:-4px;background:var(--red,#c0392b);color:#fff;font-size:0.62rem;font-weight:800;border-radius:10px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 3px;">${bildirimOkunmamisSayisi()}</div>` : ''}
           </div>
+          <div class="pusula-ayar-btn" style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-size:1.1rem;" onclick="arayuzAyarPaneliAc()" title="Ayarlar">⚙️</div>
           <div class="pusula-avatar" style="cursor:pointer;" onclick="profilPanelAc()" title="Profil Bilgilerim">${harf}</div>
           <div style="width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-size:1.15rem;cursor:pointer;" onclick="cikisOnayla()" title="Çıkış Yap">🚪</div>
         </div>
@@ -2889,20 +2977,20 @@ function renderDashboard(el) {
       ${bildirimPanelHtml()}
 
       <div class="pusula-greet">
-        <div class="pusula-greet-sub">${greet},</div>
+        <div class="pusula-greet-sub">${greetSub},</div>
         <div class="pusula-greet-name">${ad || 'Öğrenci'}!</div>
         ${kalanGun !== null ? `<div style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;background:rgba(230,180,60,0.14);border:1px solid rgba(230,180,60,0.5);border-radius:20px;padding:5px 14px;font-size:0.8rem;font-weight:700;color:#f3dfa0;">
-          ⏳ Sınava <strong style="font-size:0.95rem;margin:0 3px;">${kalanGun}</strong> gün kaldı
+          ${arayuzMod === 'aksiyon' ? '⚔️ Büyük savaşa' : '⏳ Sınava'} <strong style="font-size:0.95rem;margin:0 3px;">${kalanGun}</strong> gün kaldı
         </div>` : ''}
       </div>
 
       <div class="pusula-menu-grid">
-        ${menuItems.map((b, i) => `
-          <div class="pusula-menu-item" style="position:relative;animation-delay:${(i*0.05).toFixed(2)}s" onclick="switchToTab('${b[0]}')">
-            <img class="pusula-menu-icon" src="${PUSULA_ICONS[b[0]]}" alt="${b[1]}" style="animation-delay:${(i*0.18).toFixed(2)}s">
+        ${menuItems.map((b, i) => { const sm = arayuzMenuSimgesi(b[0], b[1], i, arayuzMod); return `
+          <div class="pusula-menu-item" style="position:relative;animation-delay:${(i*0.05).toFixed(2)}s;${sm.stil}" onclick="switchToTab('${b[0]}')">
+            ${sm.html}
             ${b[0]==='mesajlarim' && mesajOkunmamisSayisi() > 0 ? `<div style="position:absolute;top:2px;right:14px;background:var(--red,#c0392b);color:#fff;font-size:0.62rem;font-weight:800;border-radius:10px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 3px;">${mesajOkunmamisSayisi()}</div>` : ''}
             <div class="pusula-menu-label">${b[1]}</div>
-          </div>`).join('')}
+          </div>`; }).join('')}
       </div>
 
     </div>
