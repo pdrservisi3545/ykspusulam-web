@@ -1329,6 +1329,14 @@
   html[data-mod="soft"] [style*="#5a6a85,#3c4a63"] { background: linear-gradient(180deg,#f3effb,#fbeef3) !important; }
   html[data-mod="aksiyon"] [style*="#5a6a85,#3c4a63"] { background: linear-gradient(180deg,#14161d,#1b1e2b) !important; }
   html[data-mod] .sb-bg::before { background-image: none; background: var(--bg); }
+  /* Soru Bankası: beyaz kartlarda yazılar koyu kalsın (koyu modlarda açık renge dönüp silikleşmesin) */
+  html[data-mod] .sb-bg [style*="background:#fff"], html[data-mod] .sb-bg [style*="background:#ffffff"] { color: #2b2b3a; }
+  html[data-mod] .sb-bg [style*="background:#fff"] [style*="color:var(--text)"]:not(button), html[data-mod] .sb-bg [style*="background:#fff"] [style*="color:var(--text1)"]:not(button), html[data-mod] .sb-bg [style*="background:#fff"] [style*="color:var(--text2)"]:not(button) { color: #2b2b3a !important; }
+  html[data-mod] .sb-bg [style*="background:#fff"] [style*="color:var(--text3)"]:not(button) { color: #6b6f85 !important; }
+  html[data-mod] .sb-bg [style*="background:#fff"] [style*="color:#1f2937"]:not(button), html[data-mod] .sb-bg [style*="background:#fff"] [style*="color:#1e293b"]:not(button),
+  html[data-mod] .sb-bg [style*="background:#fff"] [style*="color:#3a2a15"]:not(button), html[data-mod] .sb-bg [style*="background:#fff"] [style*="color:#4a3a20"]:not(button) { color: #1f2937 !important; }
+  html[data-mod] .sb-bg [style*="background:#fff"] [style*="color:#6b5636"]:not(button), html[data-mod] .sb-bg [style*="background:#fff"] [style*="color:#8a7a5c"]:not(button) { color: #6b6f85 !important; }
+  html[data-mod] .sb-bg [style*="background:#fff"] [style*="Playfair"] { color: #2b2b3a !important; }
   html[data-mod] [style*="#fdf6e3"] { background: var(--m-sub) !important; }
   html[data-mod] [style*="color:#3b2a12"], html[data-mod] [style*="color:#4a3618"] { color: var(--m-on-gold) !important; }
 
@@ -1484,7 +1492,7 @@
 <script>
 /* Soru görselleri gorsel-pak-NN.json paketlerinde tutulur; ekranda görünce yüklenir (açılış hızı için). */
 (function(){
-  var V='75',cache={};
+  var V='76',cache={};
   function pad(n){return n<10?'0'+n:''+n;}
   function load(p){
     if(!cache[p]){
@@ -1535,8 +1543,8 @@
   <div class="content" id="mainContent"></div>
 </div>
 
-<script src="app-part1.js?v=75"></script>
-<script src="app-veri.js?v=75"></script>
+<script src="app-part1.js?v=76"></script>
+<script src="app-veri.js?v=76"></script>
 
 </script>
 </body>

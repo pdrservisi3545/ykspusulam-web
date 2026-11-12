@@ -2989,18 +2989,18 @@ function renderSoruBankasi(el) {
     const konularSade = konular.slice(1); // 'Tümü' hariç
     const konuKart = (baslik, konuKey, soruSayi, no) => `
       <div onclick="sbSecKonu('${(konuKey || '').replace(/'/g, "\\'")}')"
-        style="background:#fff;border-radius:18px;padding:20px 14px;margin-bottom:12px;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,0.18);display:flex;align-items:center;gap:12px;min-height:60px;">
+        style="background:#fff;color:#2b2b3a;border-radius:18px;padding:20px 14px;margin-bottom:12px;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,0.18);display:flex;align-items:center;gap:12px;min-height:60px;">
         <span style="font-weight:800;font-size:0.9rem;flex:1;letter-spacing:0.3px;line-height:1.35;">${no ? no + '- ' : ''}${baslik.toLocaleUpperCase('tr-TR')}${konuOrtakEtiketHtml(dersKey, konuKey)}</span>
         <span style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
           <span style="font-size:1.25rem;">📖</span>
-          <span style="font-size:0.62rem;color:var(--text3);font-weight:700;">${soruSayi} soru</span>
+          <span style="font-size:0.62rem;color:#6b6f85;font-weight:700;">${soruSayi} soru</span>
         </span>
       </div>`;
     el.innerHTML = `
     <div class="fade-up sb-bg">
       <div style="padding-top:12px;"></div>
       <div style="background:${dersInfo.grad};border-radius:24px;padding:14px 12px 4px;box-shadow:0 6px 24px rgba(0,0,0,0.2);">
-        <div style="background:#fff;border-radius:14px;padding:8px 10px;display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <div style="background:#fff;color:#2b2b3a;border-radius:14px;padding:8px 10px;display:flex;align-items:center;gap:8px;margin-bottom:12px;">
           <button onclick="sbSecDers(null)" style="background:none;border:none;cursor:pointer;padding:0;display:flex;flex-shrink:0;"><img src="${GERI_TUS_ICON}" style="width:36px;height:36px;"></button>
           <div style="flex:1;text-align:center;font-weight:900;font-size:1rem;letter-spacing:1px;margin-right:36px;">${dersInfo.ad.toLocaleUpperCase('tr-TR')}</div>
         </div>
